@@ -1,0 +1,10 @@
+# Example .gitignore for a Python project
+__pycache__/
+*.pyc
+*.log
+.env
+venv/
+.DS_Store
+.idea/
+node_modules/
+dist/
