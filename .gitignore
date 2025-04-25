@@ -11,3 +11,4 @@ dist/
 *.old
 *.json
 *.csv
+test

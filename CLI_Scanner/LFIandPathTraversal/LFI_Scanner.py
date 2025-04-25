@@ -184,8 +184,7 @@ class LFIScanner:
         1. Set base domain for same-domain crawling
         2. Start URL crawling and parameter discovery
         3. Launch exploitation phase after initial scan"""
-        if self.auth_credentials[0]:
-            self._authenticate()
+        
         self.base_domain = urlparse(start_url).netloc
         self._crawl(start_url)
         self._exploit_vulnerabilities()
