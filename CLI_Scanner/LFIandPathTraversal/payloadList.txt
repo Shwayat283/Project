@@ -1,0 +1,4 @@
+/etc/shadow
+/etc/group
+/var/log/auth.log
+/home/%USER%/.ssh/id_rsa  # Will be handled by user expansion

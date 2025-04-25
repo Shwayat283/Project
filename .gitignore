@@ -8,3 +8,6 @@ venv/
 .idea/
 node_modules/
 dist/
+*.old
+*.json
+*.csv
