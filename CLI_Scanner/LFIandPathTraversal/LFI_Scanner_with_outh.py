@@ -22,6 +22,8 @@ class LFIScanner:
         - payloads: List of path traversal test patterns
         - vulnerabilities: Store found vulnerabilities
         - exploit_files: Target files for post-discovery exploitation"""
+        self.auth_credentials = (username, password)
+        self.login_url = "http://localhost/login.php"
         self.unique_vulns = set()
         self.unique_entries = set()
         self.cookies = cookies
@@ -102,6 +104,29 @@ class LFIScanner:
             self.unique_vulns.add(vuln_hash)
             self.vulnerabilities.append(entry)
 
+    def _authenticate(self):
+        """Handle DVWA-style authentication"""
+        login_data = {
+            'username': self.auth_credentials[0],
+            'password': self.auth_credentials[1],
+            'Login': 'Login'
+        }
+        
+        # Get CSRF token
+        response = self.session.get(self.login_url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        csrf_token = soup.find('input', {'name': 'user_token'}).get('value')
+        
+        # Add CSRF token to login data
+        login_data['user_token'] = csrf_token
+        
+        # Post login request
+        response = self.session.post(self.login_url, data=login_data)
+        
+        # Verify login success
+        if "Login failed" in response.text:
+            raise Exception("Authentication failed")
+        
 
     def _create_session(self, proxy):
         """Configure HTTP session with retries and headers
@@ -585,6 +610,9 @@ def main():
                       help="Generate report in specified format (JSON/CSV)")
     parser.add_argument("-t", "--threads", type=int, default=10,
                       help="Concurrent threads for scanning (default: 10, max recommended: 50)")
+    parser.add_argument("--auth-url", help="Login page URL")
+    parser.add_argument("-U", "--username", help="Authentication username")
+    parser.add_argument("-P", "--password", help="Authentication password")
     parser.add_argument("--cookies", 
                   help="Session cookies in 'name1=value1; name2=value2' format")
     # Parse user input
