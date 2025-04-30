@@ -182,7 +182,7 @@ def main():
         host_port = args.proxy
         proxies = {
             "http": f"http://{host_port}",
-            "https": f"https://{host_port}"
+            "https": f"http://{host_port}"
         }
 
     # Default payload lists
