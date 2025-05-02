@@ -1,0 +1,9 @@
+flowchart TD
+    A[Start] --> B[Crawling Phase]
+    B --> C[Parameter Analysis]
+    C --> D[Detection Phase]
+    D --> E{Exploit Enabled?}
+    E -->|Yes| F[Exploitation Phase]
+    E -->|No| G[Reporting]
+    F --> G
+    G --> H[End]
