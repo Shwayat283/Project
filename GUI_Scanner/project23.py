@@ -23,7 +23,9 @@ def print_header(title):
 
 def ssrf_post(url, payload, param, session=None, return_bool=False, proxies=None):
     params = {param: payload}
-    s = session or requests
+    s = session or requests.Session()
+    if proxies:
+        s.proxies.update(proxies)
     try:
         r = s.post(url, data=params, verify=False, timeout=5, proxies=proxies)
     except requests.exceptions.RequestException:
@@ -46,7 +48,10 @@ def load_payloads(filename):
 
 def fetch_content(url, timeout=5.0, proxies=None):
     try:
-        response = requests.get(url, timeout=timeout, verify=False, proxies=proxies)
+        session = requests.Session()
+        if proxies:
+            session.proxies.update(proxies)
+        response = session.get(url, timeout=timeout, verify=False)
         response.raise_for_status()
         return response.text
     except requests.RequestException:
@@ -90,8 +95,10 @@ def is_valid_ip_with_port(ip_port):
 def path_payload(url, pay, param, payloads, proxies=None):
     payload = {param: pay}
     session = requests.Session()
+    if proxies:
+        session.proxies.update(proxies)
     try:
-        response = session.get(url, proxies=proxies, verify=False, timeout=5)
+        response = session.get(url, verify=False, timeout=5)
         default_headers = response.request.headers
         headers = {
             "Host": response.url.split("/")[2],  
@@ -100,7 +107,7 @@ def path_payload(url, pay, param, payloads, proxies=None):
             "User-Agent": default_headers.get("User-Agent", "Mozilla/5.0"),
             "Referer": response.url
         }
-        r = session.post(url, data=payload, headers=headers, verify=False, timeout=5, proxies=proxies)
+        r = session.post(url, data=payload, headers=headers, verify=False, timeout=5)
     except requests.exceptions.RequestException:
         return
     if payloads in r.text.lower():
@@ -109,9 +116,12 @@ def path_payload(url, pay, param, payloads, proxies=None):
 def send_with_referer(url, ref_payload, proxies=None):
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        orginal_request = requests.get(url, headers=headers, timeout=5, proxies=proxies)
+        session = requests.Session()
+        if proxies:
+            session.proxies.update(proxies)
+        orginal_request = session.get(url, headers=headers, timeout=5)
         headers["Referer"] = ref_payload
-        r = requests.get(url, headers=headers, timeout=5, proxies=proxies)
+        r = session.get(url, headers=headers, timeout=5)
         if (r.status_code != orginal_request.status_code) or (len(r.text) != len(orginal_request.text)):
             print("The site is vulnerable to SSRF:", ref_payload)
     except requests.exceptions.RequestException:
@@ -123,7 +133,10 @@ def collaborator(target_url, collab_domain, proxies=None):
         ip = f"192.168.0.{x}"
         headers = {"Referer": f"http://{ip}:8080", "User-Agent": shellshock}
         try:
-            response = requests.get(target_url, headers=headers, timeout=5, proxies=proxies)
+            session = requests.Session()
+            if proxies:
+                session.proxies.update(proxies)
+            response = session.get(target_url, headers=headers, timeout=5)
         except requests.exceptions.RequestException as e:
             return
 
@@ -133,7 +146,10 @@ def url_encode(original_url):
 
 def extract_links(url, proxies=None):
     try:
-        response = requests.get(url, proxies=proxies)
+        session = requests.Session()
+        if proxies:
+            session.proxies.update(proxies)
+        response = session.get(url)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         links = set()
@@ -181,13 +197,8 @@ def main():
     if args.proxy:
         host_port = args.proxy
         proxies = {
-<<<<<<< Updated upstream:GUI_Scanner/core/SSRF/project21.py
             "http": f"http://{host_port}",
             "https": f"http://{host_port}"
-=======
-            "/https": f"https://{host_port}",
-            "/https": f"http://{host_port}"
->>>>>>> Stashed changes:GUI_Scanner/project21.py
         }
 
     # Default payload lists
@@ -272,6 +283,7 @@ def main():
 
         tasks = [(target, payload, name) for target in target_urls for payload in ssrf_payloads for name in name_fields_list]
         with requests.Session() as session:
+            session.proxies.update(proxies)
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 20) as executor:
                 futures = [executor.submit(ssrf_post, url, payload, name, session, False, proxies) for url, payload, name in tasks]
                 concurrent.futures.wait(futures)

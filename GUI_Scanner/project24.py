@@ -181,13 +181,8 @@ def main():
     if args.proxy:
         host_port = args.proxy
         proxies = {
-<<<<<<< Updated upstream:GUI_Scanner/core/SSRF/project21.py
             "http": f"http://{host_port}",
             "https": f"http://{host_port}"
-=======
-            "/https": f"https://{host_port}",
-            "/https": f"http://{host_port}"
->>>>>>> Stashed changes:GUI_Scanner/project21.py
         }
 
     # Default payload lists
