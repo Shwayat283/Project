@@ -183,8 +183,13 @@ def main():
         proxies = {
 <<<<<<< Updated upstream:GUI_Scanner/core/SSRF/project21.py
 <<<<<<< Updated upstream:GUI_Scanner/core/SSRF/project21.py
+<<<<<<< Updated upstream:GUI_Scanner/core/SSRF/project21.py
             "http": f"http://{host_port}",
             "https": f"http://{host_port}"
+=======
+            "/https": f"https://{host_port}",
+            "/https": f"http://{host_port}"
+>>>>>>> Stashed changes:GUI_Scanner/project21.py
 =======
             "/https": f"https://{host_port}",
             "/https": f"http://{host_port}"
