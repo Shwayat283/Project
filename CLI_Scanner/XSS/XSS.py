@@ -1,5 +1,6 @@
 import argparse
 import concurrent.futures
+import csv
 import json
 import random
 import threading
@@ -9,10 +10,13 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, quote, parse_qs
 from playwright.sync_api import sync_playwright
 import html
+import xml.etree.ElementTree as ET
 
 class XSSHunter:
-    def __init__(self, target_url):
+    def __init__(self, target_url, output_formats=None, output_file="xss_report"):
         self.target_url = target_url
+        self.output_formats = output_formats or []
+        self.output_file = output_file
         self.session = requests.Session()
         self.vulnerabilities = []
         self.crawled_urls = set()
@@ -226,6 +230,45 @@ class XSSHunter:
                 'location': location
             })
 
+    def export_reports(self):
+        for fmt in self.output_formats:
+            fmt_lower = fmt.lower()
+            if fmt_lower == 'json':
+                self.export_json()
+            elif fmt_lower == 'csv':
+                self.export_csv()
+            elif fmt_lower == 'xml':
+                self.export_xml()
+            else:
+                print(f"[!] Unknown output format: {fmt}")
+
+    def export_json(self):
+        filename = f"{self.output_file}.json"
+        with open(filename, 'w') as f:
+            json.dump(self.vulnerabilities, f, indent=4)
+        print(f"[+] JSON report saved to {filename}")
+
+    def export_csv(self):
+        filename = f"{self.output_file}.csv"
+        with open(filename, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['type', 'payload', 'location'])
+            writer.writeheader()
+            for vuln in self.vulnerabilities:
+                writer.writerow(vuln)
+        print(f"[+] CSV report saved to {filename}")
+
+    def export_xml(self):
+        filename = f"{self.output_file}.xml"
+        root = ET.Element('vulnerabilities')
+        for vuln in self.vulnerabilities:
+            vuln_elem = ET.SubElement(root, 'vulnerability')
+            ET.SubElement(vuln_elem, 'type').text = vuln['type']
+            ET.SubElement(vuln_elem, 'payload').text = vuln['payload']
+            ET.SubElement(vuln_elem, 'location').text = vuln['location']
+        tree = ET.ElementTree(root)
+        tree.write(filename, encoding='utf-8', xml_declaration=True)
+        print(f"[+] XML report saved to {filename}")
+
     def start_scan(self):
         print(f"\033[94m[*] Starting scan on {self.target_url}\033[0m")
         
@@ -234,6 +277,8 @@ class XSSHunter:
             executor.submit(self.run_dom_tests)
 
         print(f"\n\033[92m[+] Scan complete. Found {len(self.vulnerabilities)} vulnerabilities.\033[0m")
+        if self.output_formats:
+            self.export_reports()
 
     def run_dom_tests(self):
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -269,14 +314,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Advanced XSS Vulnerability Scanner",
         formatter_class=argparse.RawTextHelpFormatter,
-        epilog="Example:\n  python xss_scanner.py -u https://vulnerable-site.com -w 3"
+        epilog="Example:\n  python xss_scanner.py -u https://vulnerable-site.com -w 3 -f csv,json -o report"
     )
     parser.add_argument("-u", "--url", required=True, help="Target URL")
     parser.add_argument("-w", "--workers", type=int, default=3, help="Thread workers")
+    parser.add_argument("-f", "--format", 
+                        help="Output formats (comma-separated: csv,json,xml)", 
+                        default="", 
+                        type=lambda s: s.split(','))
+    parser.add_argument("-o", "--output", 
+                        help="Output base filename", 
+                        default="xss_report")
     
     try:
         args = parser.parse_args()
-        scanner = XSSHunter(args.url)
+        scanner = XSSHunter(args.url, output_formats=args.format, output_file=args.output)
         scanner.max_workers = args.workers
         scanner.start_scan()
     except KeyboardInterrupt:
