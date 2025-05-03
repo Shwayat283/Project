@@ -11,17 +11,27 @@ from urllib.parse import urljoin, urlparse, quote, parse_qs
 from playwright.sync_api import sync_playwright
 import html
 import xml.etree.ElementTree as ET
+from datetime import datetime
 
 class XSSHunter:
-    def __init__(self, target_url, output_formats=None, output_file="xss_report"):
+    def __init__(self, target_url, output_formats=None, output_file="xss_report", proxy_url=None):
         self.target_url = target_url
         self.output_formats = output_formats or []
         self.output_file = output_file
+        self.proxy_url = proxy_url
         self.session = requests.Session()
         self.vulnerabilities = []
         self.crawled_urls = set()
         self.lock = threading.Lock()
         
+        # Configure proxy if specified
+        if self.proxy_url:
+            self.session.proxies = {
+                'http': self.proxy_url,
+                'https': self.proxy_url
+            }
+            self.session.verify = False  # Disable SSL verification for Burp
+            
         # Configuration
         self.max_workers = 3
         self.scan_depth = 2
@@ -181,9 +191,21 @@ class XSSHunter:
 
     def run_dom_test(self, payload, test_type, sink=None):
         try:
+            proxy_args = {}
+            if self.proxy_url:
+                proxy_host, proxy_port = self.proxy_url.split('//')[1].split(':')
+                proxy_args['proxy'] = {
+                    'server': f'{proxy_host}:{proxy_port}',
+                    'username': '',  # Add if your proxy requires authentication
+                    'password': ''
+                }
+
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
-                context = browser.new_context()
+                browser = playwright.chromium.launch(
+                    headless=True,
+                    **proxy_args
+                )
+                context = browser.new_context(ignore_https_errors=True)
                 page = context.new_page()
                 
                 if test_type == 'hashchange':
@@ -221,13 +243,15 @@ class XSSHunter:
             print(f"DOM test failed: {str(e)}")
 
     def report_vulnerability(self, vuln_type, payload, location):
+        timestamp = datetime.now().isoformat()
         with self.lock:
-            print(f"\033[91m[!] {vuln_type} found at {location}\033[0m")
+            print(f"\033[91m[!] [{timestamp}] {vuln_type} found at {location}\033[0m")
             print(f"    Payload: {payload}\n")
             self.vulnerabilities.append({
                 'type': vuln_type,
                 'payload': payload,
-                'location': location
+                'location': location,
+                'timestamp': timestamp
             })
 
     def export_reports(self):
@@ -251,7 +275,7 @@ class XSSHunter:
     def export_csv(self):
         filename = f"{self.output_file}.csv"
         with open(filename, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=['type', 'payload', 'location'])
+            writer = csv.DictWriter(f, fieldnames=['type', 'payload', 'location', 'timestamp'])
             writer.writeheader()
             for vuln in self.vulnerabilities:
                 writer.writerow(vuln)
@@ -265,6 +289,7 @@ class XSSHunter:
             ET.SubElement(vuln_elem, 'type').text = vuln['type']
             ET.SubElement(vuln_elem, 'payload').text = vuln['payload']
             ET.SubElement(vuln_elem, 'location').text = vuln['location']
+            ET.SubElement(vuln_elem, 'timestamp').text = vuln['timestamp']
         tree = ET.ElementTree(root)
         tree.write(filename, encoding='utf-8', xml_declaration=True)
         print(f"[+] XML report saved to {filename}")
@@ -312,9 +337,9 @@ class XSSHunter:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Advanced XSS Vulnerability Scanner",
+        description="Advanced XSS Vulnerability Scanner with Burp Integration",
         formatter_class=argparse.RawTextHelpFormatter,
-        epilog="Example:\n  python xss_scanner.py -u https://vulnerable-site.com -w 3 -f csv,json -o report"
+        epilog="Example:\n  python xss_scanner.py -u http://example.com -w 3 -f csv -p http://127.0.0.1:8080"
     )
     parser.add_argument("-u", "--url", required=True, help="Target URL")
     parser.add_argument("-w", "--workers", type=int, default=3, help="Thread workers")
@@ -325,10 +350,18 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output", 
                         help="Output base filename", 
                         default="xss_report")
+    parser.add_argument("-p", "--proxy", 
+                        help="Burp Suite proxy URL (e.g., http://127.0.0.1:8080)", 
+                        default=None)
     
     try:
         args = parser.parse_args()
-        scanner = XSSHunter(args.url, output_formats=args.format, output_file=args.output)
+        scanner = XSSHunter(
+            args.url, 
+            output_formats=args.format, 
+            output_file=args.output,
+            proxy_url=args.proxy
+        )
         scanner.max_workers = args.workers
         scanner.start_scan()
     except KeyboardInterrupt:
