@@ -164,6 +164,114 @@ def save_to_csv(data, filename):
         for entry in data:
             writer.writerow(entry)
 
+def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
+    print(Fore.MAGENTA + "▶ Enter target URL :" + Style.RESET_ALL)
+    print(Fore.GREEN + base_url + Style.RESET_ALL)
+
+    main_page_content = fetch_content(base_url, proxies=proxies)
+    raw_links = set(re.findall(r'href=["\'](.*?)["\']', main_page_content))
+    absolute_links = {urljoin(base_url, link) for link in raw_links}
+
+    actions_list, value_fields_list, name_fields_list = [], [], []
+    print_shapes()
+    print(Fore.MAGENTA + "Links found and checked:" + Style.RESET_ALL)
+
+    for link in absolute_links:
+        print(Fore.GREEN + link + Style.RESET_ALL)
+        page_content = fetch_content(link, proxies=proxies)
+        for func in (extract_actions, extract_values, extract_names):
+            for item in func(page_content):
+                if func == extract_actions and item not in actions_list:
+                    actions_list.append(item)
+                elif func == extract_values and item not in value_fields_list:
+                    value_fields_list.append(item)
+                elif func == extract_names and item not in name_fields_list:
+                    name_fields_list.append(item)
+
+    result_links = filter_similar_urls(absolute_links)
+    url_value = []
+    for v in value_fields_list:
+        base_v = extract_base_url(v)
+        if base_v not in url_value:
+            url_value.append(base_v)
+
+    print_shapes()
+    print(Fore.MAGENTA + "Request body parameters:" + Style.RESET_ALL)
+    for name in name_fields_list:
+        print(Fore.GREEN + name + Style.RESET_ALL)
+
+    target_urls = [f"{base_url}{action}" for action in actions_list]
+    print_shapes()
+    print(Fore.MAGENTA + "Links that work with POST and GET methods:" + Style.RESET_ALL)
+    for t in target_urls:
+        print(Fore.GREEN + t + Style.RESET_ALL)
+
+    ip_ports = [i.split("://")[-1] for i in url_value]
+    print_shapes()
+    print(Fore.MAGENTA + "Links with IP addresses:" + Style.RESET_ALL)
+    for ip in ip_ports:
+        print(Fore.GREEN + ip + Style.RESET_ALL)
+
+    print_shapes()
+    print(Fore.MAGENTA + "Sending payload with found IP addresses:" + Style.RESET_ALL)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 50) as executor:
+        for ip in ip_ports:
+            if is_valid_ip_with_port(ip):
+                for i in range(1, 256):
+                    for target in target_urls:
+                        for payload in path_payloads:
+                            for name in name_fields_list:
+                                executor.submit(process_payload, ip, i, target, payload, name, proxies)
+
+    print_shapes()
+    print(Fore.MAGENTA + "Sending payload with parameters found:" + Style.RESET_ALL)
+
+    tasks = [(target, payload, name) for target in target_urls for payload in ssrf_payloads for name in name_fields_list]
+    with requests.Session() as session:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 20) as executor:
+            futures = [executor.submit(ssrf_post, url, payload, name, session, False, proxies) for url, payload, name in tasks]
+            concurrent.futures.wait(futures)
+
+    print_shapes()
+    print(Fore.MAGENTA + "Send path payload :" + Style.RESET_ALL)
+    tar = []
+    for k in result_links:
+        p = extract_links(k, proxies=proxies)
+        p_cleaned = [url.replace(base_url, "") for url in p]
+        tar.extend(p_cleaned)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 50) as executor:
+        futures = []
+        for target_url in target_urls:
+            for payload in path_payloads:
+                for u in tar:
+                    combined = u + payload
+                    encoded_text = url_encode(combined)
+                    for n in name_fields_list:
+                        futures.append(executor.submit(path_payload, target_url, encoded_text, n, payload, proxies))
+        concurrent.futures.wait(futures)
+
+    if args.collaborator:
+        collab_domain = args.collaborator.strip()
+        print(Fore.MAGENTA + "Sending Burp Collaborator domain with payload in referer header:" + Style.RESET_ALL)
+        for link in result_links:
+            send_with_referer(link, "http://" + collab_domain, proxies)
+        if input(f"{Fore.MAGENTA}Do you want to do bruteforce attack with Collaborator domain: {Style.RESET_ALL}").strip().lower() == "yes":
+            with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 20) as executor:
+                futures = [executor.submit(collaborator, link, collab_domain, proxies) for link in result_links]
+                concurrent.futures.wait(futures)
+
+    # Save results if output format is specified
+    if args.output:
+        output_data = []
+        for link in result_links:
+            output_data.append({"URL": link})
+        if args.output == "json":
+            save_to_json(output_data, "results.json")
+        elif args.output == "csv":
+            save_to_csv(output_data, "results.csv")
+
 def main():
     parser = argparse.ArgumentParser(description="SSRF Scanner")
     parser.add_argument('-u', '--url', help="Single target URL")
@@ -181,18 +289,8 @@ def main():
     if args.proxy:
         host_port = args.proxy
         proxies = {
-<<<<<<< Updated upstream:GUI_Scanner/core/SSRF/project21.py
-<<<<<<< Updated upstream:GUI_Scanner/core/SSRF/project21.py
             "http": f"http://{host_port}",
             "https": f"http://{host_port}"
-=======
-            "/https": f"https://{host_port}",
-            "/https": f"http://{host_port}"
->>>>>>> Stashed changes:GUI_Scanner/project21.py
-=======
-            "/https": f"https://{host_port}",
-            "/https": f"http://{host_port}"
->>>>>>> Stashed changes:GUI_Scanner/project21.py
         }
 
     # Default payload lists
@@ -203,7 +301,7 @@ def main():
     payload_list = args.payload_list or default_payload_list
     path_payload_list = args.path_payload_list or default_path_payload_list
 
-    # Read payloads
+    # Read payloads once
     ssrf_payloads = load_payloads(payload_list)
     path_payloads = load_payloads(path_payload_list)
 
@@ -213,119 +311,17 @@ def main():
         base_url = args.url.strip()
         if base_url.endswith('/'):
             base_url = base_url[:-1]
-        print(Fore.MAGENTA + "▶ Enter target URL :" + Style.RESET_ALL)
-        print(Fore.GREEN + base_url + Style.RESET_ALL)
-
-        main_page_content = fetch_content(base_url, proxies=proxies)
-        raw_links = set(re.findall(r'href=["\'](.*?)["\']', main_page_content))
-        absolute_links = {urljoin(base_url, link) for link in raw_links}
-
-        actions_list, value_fields_list, name_fields_list = [], [], []
-        print_shapes()
-        print(Fore.MAGENTA + "Links found and checked:" + Style.RESET_ALL)
-
-        for link in absolute_links:
-            print(Fore.GREEN + link + Style.RESET_ALL)
-            page_content = fetch_content(link, proxies=proxies)
-            for func in (extract_actions, extract_values, extract_names):
-                for item in func(page_content):
-                    if func == extract_actions and item not in actions_list:
-                        actions_list.append(item)
-                    elif func == extract_values and item not in value_fields_list:
-                        value_fields_list.append(item)
-                    elif func == extract_names and item not in name_fields_list:
-                        name_fields_list.append(item)
-
-        result_links = filter_similar_urls(absolute_links)
-        url_value = []
-        for v in value_fields_list:
-            base_v = extract_base_url(v)
-            if base_v not in url_value:
-                url_value.append(base_v)
-
-        print_shapes()
-        print(Fore.MAGENTA + "Request body parameters:" + Style.RESET_ALL)
-        for name in name_fields_list:
-            print(Fore.GREEN + name + Style.RESET_ALL)
-
-        target_urls = [f"{base_url}{action}" for action in actions_list]
-        print_shapes()
-        print(Fore.MAGENTA + "Links that work with POST and GET methods:" + Style.RESET_ALL)
-        for t in target_urls:
-            print(Fore.GREEN + t + Style.RESET_ALL)
-
-        ip_ports = [i.split("://")[-1] for i in url_value]
-        print_shapes()
-        print(Fore.MAGENTA + "Links with IP addresses:" + Style.RESET_ALL)
-        for ip in ip_ports:
-            print(Fore.GREEN + ip + Style.RESET_ALL)
-
-        print_shapes()
-        print(Fore.MAGENTA + "Sending payload with found IP addresses:" + Style.RESET_ALL)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 50) as executor:
-            for ip in ip_ports:
-                if is_valid_ip_with_port(ip):
-                    for i in range(1, 256):
-                        for target in target_urls:
-                            for payload in path_payloads:
-                                for name in name_fields_list:
-                                    executor.submit(process_payload, ip, i, target, payload, name, proxies)
-
-        print_shapes()
-        print(Fore.MAGENTA + "Sending payload with parameters found:" + Style.RESET_ALL)
-
-        tasks = [(target, payload, name) for target in target_urls for payload in ssrf_payloads for name in name_fields_list]
-        with requests.Session() as session:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 20) as executor:
-                futures = [executor.submit(ssrf_post, url, payload, name, session, False, proxies) for url, payload, name in tasks]
-                concurrent.futures.wait(futures)
-
-        print_shapes()
-        print(Fore.MAGENTA + "Send path payload :" + Style.RESET_ALL)
-        tar = []
-        for k in result_links:
-            p = extract_links(k, proxies=proxies)
-            p_cleaned = [url.replace(base_url, "") for url in p]
-            tar.extend(p_cleaned)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 50) as executor:
-            futures = []
-            for target_url in target_urls:
-                for payload in path_payloads:
-                    for u in tar:
-                        combined = u + payload
-                        encoded_text = url_encode(combined)
-                        for n in name_fields_list:
-                            futures.append(executor.submit(path_payload, target_url, encoded_text, n, payload, proxies))
-            concurrent.futures.wait(futures)
-
-        if args.collaborator:
-            collab_domain = args.collaborator.strip()
-            print(Fore.MAGENTA + "Sending Burp Collaborator domain with payload in referer header:" + Style.RESET_ALL)
-            for link in result_links:
-                send_with_referer(link, "http://" + collab_domain, proxies)
-            if input(f"{Fore.MAGENTA}Do you want to do bruteforce attack with Collaborator domain: {Style.RESET_ALL}").strip().lower() == "yes":
-                with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 20) as executor:
-                    futures = [executor.submit(collaborator, link, collab_domain, proxies) for link in result_links]
-                    concurrent.futures.wait(futures)
-
-        # Save results if output format is specified
-        if args.output:
-            output_data = []
-            for link in result_links:
-                output_data.append({"URL": link})
-            if args.output == "json":
-                save_to_json(output_data, "results.json")
-            elif args.output == "csv":
-                save_to_csv(output_data, "results.csv")
-
+        process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies)
     elif args.url_list:
         with open(args.url_list, 'r') as f:
             urls = [line.strip() for line in f if line.strip()]
             for url in urls:
-                args.url = url
-                main()
+                if url.endswith('/'):
+                    url = url[:-1]
+                try:
+                    process_single_url(url, ssrf_payloads, path_payloads, args, proxies)
+                except Exception as e:
+                    print(f"{Fore.RED}Error processing {url}: {e}{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main()
