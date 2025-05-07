@@ -170,8 +170,10 @@ class LFIScanner:
             ]
         }
     }
-        self.payload_categories = self.categories 
+        if 'all' in self.selected_categories:
+            self.selected_categories = list(self.categories.keys())
 
+        self.payload_categories = self.categories 
 
 
     def _load_wordlist(self, wordlist_path):
@@ -981,6 +983,7 @@ def main():
 
     parser.add_argument("--exploit", nargs="*",
                         choices=[
+                        "all",
                         "linux_system", "linux_users", "log_rce",
                         "web_servers", "cron_jobs", "database",
                         "ftp_configs", "ssh_keys", "boot_files",
