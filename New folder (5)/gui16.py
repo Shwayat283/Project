@@ -1,13 +1,14 @@
 import threading
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 from tkinter import ttk
 import json
 import csv
 import io
-import PathTraversalWithComment as scanner_module
-import FinalLFI as scanner_module
+import LFI as scanner_module
 import XSS as xss_module
+import SSTI as ssti_module
 from PIL import Image, ImageTk
 import os
 
@@ -16,66 +17,111 @@ class ScannerApp(tk.Tk):
         super().__init__()
         self.title("Vulnerability Scanner")
         self.geometry("1200x900")
-        self.current_bg = "#0f172a"  # Dark navy background
+        # Minimal color scheme
+        self.current_bg = "#1a1a1a"  # Dark background
+        self.accent_color = "#4a90e2"  # Soft blue accent
+        self.text_color = "#ffffff"  # White text
+        self.error_color = "#e74c3c"  # Soft red for errors
+        self.success_color = "#2ecc71"  # Soft green for success
         self.configure(bg=self.current_bg)
         self.style = ttk.Style(self)
         self.style.theme_use('alt')
+        
+        # Initialize icons
+        self.icons = {
+            "LFI": "📁",  # File icon
+            "SSRF": "🔄",  # Refresh icon
+            "SSTI": "📝",  # Document icon
+            "XSS": "⚠️"   # Warning icon
+        }
+        
         self._setup_styles()
         self._create_settings_button()
         self._create_main_menu()
     
     def _setup_styles(self):
-        """تحديث الأنماط مع اللون الحالي"""
+        """Setup minimal theme styles"""
+        # Configure base styles
         self.style.configure('TFrame', background=self.current_bg)
-        self.style.configure('TLabel', background=self.current_bg, foreground='#f8fafc', font=('Segoe UI', 12))
-        self.style.configure('TButton', font=('Segoe UI', 12, 'bold'), 
-                             borderwidth=0, relief='flat',
-                             background='#1e293b', foreground='#f8fafc',
-                             padding=(20, 10))
+        self.style.configure('TLabel', 
+                           background=self.current_bg, 
+                           foreground=self.text_color,
+                           font=('Segoe UI', 12))
+        self.style.configure('TButton', 
+                           font=('Segoe UI', 12, 'bold'),
+                           borderwidth=0,
+                           relief='flat',
+                           background='#2d2d2d',
+                           foreground=self.text_color,
+                           padding=(20, 10))
         self.style.map('TButton',
-               background=[('active', '#334155'), ('pressed', '#475569')])
-        self.style.configure('TLabelframe', background=self.current_bg, 
-                             relief='flat', borderwidth=5,
-                             foreground='#38bdf8', font=('Segoe UI', 12, 'bold'))
-        self.style.configure('TLabelframe.Label', background=self.current_bg, foreground='#38bdf8')
+                      background=[('active', '#3d3d3d'), ('pressed', '#4d4d4d')])
         
-        # Custom styles for different buttons
+        # Configure accent button style
         self.style.configure('Accent.TButton', 
-                            background='#38bdf8',
-                            foreground='#0f172a',
-                            font=('Segoe UI', 12, 'bold'),
-                            padding=(20, 10))
+                           background=self.accent_color,
+                           foreground=self.text_color,
+                           font=('Segoe UI', 12, 'bold'),
+                           padding=(20, 10))
         self.style.map('Accent.TButton',
-                      background=[('active', '#7dd3fc'), ('pressed', '#0284c7')])
+                      background=[('active', '#5a9ae2'), ('pressed', '#4a90e2')])
         
+        # Configure danger button style
         self.style.configure('Danger.TButton',
-                            background='#ef4444',
-                            foreground='#f8fafc',
-                            font=('Segoe UI', 12, 'bold'),
-                            padding=(20, 10))
+                           background=self.error_color,
+                           foreground=self.text_color,
+                           font=('Segoe UI', 12, 'bold'),
+                           padding=(20, 10))
         self.style.map('Danger.TButton',
-                      background=[('active', '#f87171'), ('pressed', '#dc2626')])
+                      background=[('active', '#f55c4c'), ('pressed', '#e74c3c')])
         
+        # Configure success button style
         self.style.configure('Success.TButton',
-                            background='#10b981',
-                            foreground='#f8fafc',
-                            font=('Segoe UI', 12, 'bold'),
-                            padding=(20, 10))
+                           background=self.success_color,
+                           foreground=self.text_color,
+                           font=('Segoe UI', 12, 'bold'),
+                           padding=(20, 10))
         self.style.map('Success.TButton',
-                      background=[('active', '#34d399'), ('pressed', '#059669')])
+                      background=[('active', '#3ecc81'), ('pressed', '#2ecc71')])
+        
+        # Configure entry style
+        self.style.configure('Custom.TEntry',
+                           fieldbackground='#2d2d2d',
+                           foreground=self.text_color,
+                           insertcolor=self.text_color,
+                           bordercolor='#3d3d3d',
+                           lightcolor='#3d3d3d',
+                           darkcolor='#3d3d3d')
+        
+        # Configure notebook style
+        self.style.configure('TNotebook',
+                           background=self.current_bg,
+                           tabmargins=[2, 5, 2, 0])
+        self.style.configure('TNotebook.Tab',
+                           background='#24283b',
+                           foreground=self.text_color,
+                           padding=[10, 5],
+                           font=('Segoe UI', 10))
+        self.style.map('TNotebook.Tab',
+                      background=[('selected', self.accent_color)],
+                      foreground=[('selected', '#1a1b26')])
 
     def _create_settings_button(self):
-        # Floating settings button in the top-left corner
+        """Create modern settings button"""
         self.settings_btn = tk.Button(
             self, text='⚙', font=('Segoe UI', 22, 'bold'),
-            bg=self.current_bg, fg='white', bd=0, relief='flat', cursor='hand2',
-            activebackground='#3d3d3d', activeforeground='white'
+            bg=self.current_bg, fg=self.text_color, bd=0, relief='flat',
+            cursor='hand2', activebackground='#24283b',
+            activeforeground=self.accent_color
         )
         self.settings_btn.place(x=10, y=10, width=44, height=44)
 
-        # Settings menu
-        self.settings_menu = tk.Menu(self, tearoff=0, bg='#2d2d2d', fg='white',
-                                     activebackground='#3d3d3d', activeforeground='white')
+        # Modern settings menu
+        self.settings_menu = tk.Menu(self, tearoff=0,
+                                   bg='#24283b', fg=self.text_color,
+                                   activebackground=self.accent_color,
+                                   activeforeground='#1a1b26',
+                                   font=('Segoe UI', 10))
         self.settings_menu.add_command(label='Color Theme', command=self._open_color_theme)
         self.settings_menu.add_command(label='Help', command=self._open_help)
         self.settings_menu.add_separator()
@@ -231,353 +277,72 @@ class ScannerApp(tk.Tk):
                             foreground="#888888")
         copyright.pack(side=tk.BOTTOM)
 
-    def _lighten_color(self, hex_color, factor=0.2):
-        hex_color = hex_color.lstrip('#')
-        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-        new_rgb = [min(int(c + (255 - c) * factor), 255) for c in rgb]
-        return f'#{new_rgb[0]:02x}{new_rgb[1]:02x}{new_rgb[2]:02x}'
-
     def _create_main_menu(self):
-        """Create the main menu with scanner options"""
-        self.main_frame = ttk.Frame(self)
-        self.main_frame.pack(expand=True, fill=tk.BOTH, padx=50, pady=50)
+        """Create minimal main menu"""
+        menu_frame = ttk.Frame(self, padding=20)
+        menu_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Title with icon
-        title_frame = ttk.Frame(self.main_frame)
-        title_frame.pack(pady=(30, 50))
+        # Title with minimal styling
+        title_label = ttk.Label(menu_frame, 
+                               text="Vulnerability Scanner",
+                               font=('Segoe UI', 32, 'bold'),
+                               foreground=self.accent_color)
+        title_label.pack(pady=(0, 30))
         
-        title = ttk.Label(title_frame, 
-                         text="Vulnerability Scanner", 
-                         font=("Segoe UI", 40, "bold"),
-                         foreground="#38bdf8")
-        title.pack()
-        
-        subtitle = ttk.Label(title_frame,
-                           text="Advanced Security Testing Platform",
-                           font=("Segoe UI", 18),
-                           foreground="#94a3b8")
-        subtitle.pack(pady=(5, 0))
-        
-        # Main buttons with icons
-        button_frame = ttk.Frame(self.main_frame)
-        button_frame.pack(fill=tk.BOTH, expand=True, pady=20)
-        
-        buttons = [
-            ("SSRF", "#38bdf8", "🌐"),
-            ("SSTI", "#10b981", "📝"),
-            ("LFI", "#ef4444", "📂"),
-            ("XSS", "#8b5cf6", "⚠️")
+        # Scanner buttons with icons and minimal layout
+        scanners = [
+            ("LFI Scanner", "LFI"),
+            ("SSRF Scanner", "SSRF"),
+            ("SSTI Scanner", "SSTI"),
+            ("XSS Scanner", "XSS")
         ]
         
-        for text, color, icon in buttons:
-            btn = tk.Button(
-                button_frame,
-                text=f"{icon} {text}",
-                font=("Segoe UI", 20, "bold"),
-                bg=color,
-                fg="#0f172a",
-                activebackground=self._lighten_color(color),
-                activeforeground="#0f172a",
-                relief='flat',
-                width=30,
-                bd=0,
-                command=lambda v=text: self._show_scanner(v)
-            )
-            btn.pack(fill=tk.BOTH, expand=True, padx=0, pady=8)
-            btn.bind("<Enter>", lambda e, b=btn, c=color: b.config(bg=self._lighten_color(c)))
-            btn.bind("<Leave>", lambda e, b=btn, c=color: b.config(bg=c))
+        for text, scanner_type in scanners:
+            btn = ttk.Button(menu_frame,
+                            text=f"{self.icons.get(scanner_type, '')} {text}",
+                            style='Accent.TButton',
+                            command=lambda t=scanner_type: self._show_scanner(t))
+            btn.pack(fill=tk.X, pady=5, padx=50)
+            
+        # Version label with minimal styling
+        version_label = ttk.Label(menu_frame,
+                                 text="Version 1.0",
+                                 font=('Segoe UI', 10),
+                                 foreground='#666666')
+        version_label.pack(side=tk.BOTTOM, pady=10)
 
     def _show_scanner(self, scanner_type):
-        """Show scanner interface in the main window"""
-        # Hide settings button
-        self.settings_btn.place_forget()
-        
-        # Clear main menu
-        self.main_frame.pack_forget()
-        
-        # Create scanner frame
-        self.scanner_frame = ttk.Frame(self)
-        self.scanner_frame.pack(expand=True, fill=tk.BOTH, padx=30, pady=30)
-        
-        # Create notebook for tabs
-        self.notebook = ttk.Notebook(self.scanner_frame)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
-        
-        # Create Configuration tab
-        config_frame = ttk.Frame(self.notebook)
-        self.notebook.add(config_frame, text="Configuration")
-        
-        # Header with back button
-        header_frame = ttk.Frame(config_frame)
-        header_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        icons = {
-            "SSRF": "🌐",
-            "SSTI": "📝",
-            "LFI": "📂",
-            "XSS": "⚠️"
-        }
-        
-        header = ttk.Label(header_frame,
-                          text=f"{icons.get(scanner_type, '🔍')} {scanner_type} Scanner",
-                          font=("Segoe UI", 24, "bold"),
-                          foreground="#00BFFF")
-        header.pack(side=tk.LEFT, padx=(20, 0))
-        
-        # Input section with modern design
-        input_frame = ttk.LabelFrame(config_frame, text="Input Configuration")
-        input_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        # Configure grid columns to have equal width
-        input_frame.grid_columnconfigure(1, weight=1)
-        
-        # URL input with icon
-        url_frame = ttk.Frame(input_frame)
-        url_frame.pack(fill=tk.X, padx=20, pady=10)
-        
-        url_label = ttk.Label(url_frame, text="🌐 Target URL:", font=("Segoe UI", 12), width=15)
-        url_label.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.url_entry = ttk.Entry(url_frame, font=("Segoe UI", 12), width=50)
-        self.url_entry.insert(0, "Enter target URL (e.g., http://example.com)")
-        self.url_entry.config(foreground='#808080')  # Light gray color
-        self.url_entry.bind('<FocusIn>', lambda e: self._clear_placeholder(e, "Enter target URL (e.g., http://example.com)"))
-        self.url_entry.bind('<FocusOut>', lambda e: self._restore_placeholder(e, "Enter target URL (e.g., http://example.com)"))
-        self.url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        # URL List input
-        urllist_frame = ttk.Frame(input_frame)
-        urllist_frame.pack(fill=tk.X, padx=20, pady=10)
-        
-        urllist_label = ttk.Label(urllist_frame, text="📋 URL List:", font=("Segoe UI", 12), width=15)
-        urllist_label.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.urllist_entry = ttk.Entry(urllist_frame, font=("Segoe UI", 12), width=50)
-        self.urllist_entry.insert(0, "Enter path to URL list file (optional)")
-        self.urllist_entry.config(foreground='#808080')  # Light gray color
-        self.urllist_entry.bind('<FocusIn>', lambda e: self._clear_placeholder(e, "Enter path to URL list file (optional)"))
-        self.urllist_entry.bind('<FocusOut>', lambda e: self._restore_placeholder(e, "Enter path to URL list file (optional)"))
-        self.urllist_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        browse_btn = ttk.Button(urllist_frame, text="Browse", style='Accent.TButton',
-                              command=lambda: self._browse_file(self.urllist_entry))
-        browse_btn.pack(side=tk.LEFT, padx=(10, 0))
-        
-        # Scanner specific inputs
+        """Show scanner window with modern styling"""
         if scanner_type == "LFI":
-            # Wordlist input
-            wordlist_frame = ttk.Frame(input_frame)
-            wordlist_frame.pack(fill=tk.X, padx=20, pady=10)
-            
-            wordlist_label = ttk.Label(wordlist_frame, text="📚 Wordlist:", font=("Segoe UI", 12), width=15)
-            wordlist_label.pack(side=tk.LEFT, padx=(0, 10))
-            
-            self.wordlist_entry = ttk.Entry(wordlist_frame, font=("Segoe UI", 12), width=50)
-            self.wordlist_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            
-            browse_btn = ttk.Button(wordlist_frame, text="Browse", style='Accent.TButton',
-                                  command=lambda: self._browse_file(self.wordlist_entry))
-            browse_btn.pack(side=tk.LEFT, padx=(10, 0))
-            
-            # Exploit Categories
-            categories_frame = ttk.LabelFrame(input_frame, text="Exploit Categories")
-            categories_frame.pack(fill=tk.X, padx=20, pady=10)
-            
-            self.category_vars = {}
-            categories = [
-                ("linux_users", "Linux User Files"),
-                ("linux_system", "Linux System Files"),
-                ("linux_network", "Linux Network Files"),
-                ("windows_common", "Windows Files"),
-                ("log_rce", "Log-based RCE")
-            ]
-            
-            for cat_id, cat_name in categories:
-                var = tk.BooleanVar()
-                self.category_vars[cat_id] = var
-                cb = ttk.Checkbutton(categories_frame, 
-                                   text=cat_name,
-                                   variable=var)
-                cb.pack(anchor=tk.W, pady=2)
-                
+            if hasattr(self, 'lfi_window') and self.lfi_window.winfo_exists():
+                self.lfi_window.lift()
+                return
+            self.lfi_window = LFIScannerWindow(self)
+            self.lfi_window.protocol("WM_DELETE_WINDOW", lambda: self._on_child_close(self.lfi_window))
+            self.lfi_window.grab_set()
         elif scanner_type == "SSRF":
-            # Payload List input
-            payload_frame = ttk.Frame(input_frame)
-            payload_frame.pack(fill=tk.X, padx=20, pady=10)
-            
-            payload_label = ttk.Label(payload_frame, text="🎯 Payload List:", font=("Segoe UI", 12), width=15)
-            payload_label.pack(side=tk.LEFT, padx=(0, 10))
-            
-            self.payload_entry = ttk.Entry(payload_frame, font=("Segoe UI", 12), width=50)
-            self.payload_entry.insert(0, "Enter path to payload list file")
-            self.payload_entry.config(foreground='#808080')  # Light gray color
-            self.payload_entry.bind('<FocusIn>', lambda e: self._clear_placeholder(e, "Enter path to payload list file"))
-            self.payload_entry.bind('<FocusOut>', lambda e: self._restore_placeholder(e, "Enter path to payload list file"))
-            self.payload_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            
-            browse_btn = ttk.Button(payload_frame, text="Browse", style='Accent.TButton',
-                                  command=lambda: self._browse_file(self.payload_entry))
-            browse_btn.pack(side=tk.LEFT, padx=(10, 0))
-            
-            # Path Payload List input
-            path_payload_frame = ttk.Frame(input_frame)
-            path_payload_frame.pack(fill=tk.X, padx=20, pady=10)
-            
-            path_payload_label = ttk.Label(path_payload_frame, text="📂 Path Payload List:", font=("Segoe UI", 12), width=15)
-            path_payload_label.pack(side=tk.LEFT, padx=(0, 10))
-            
-            self.path_payload_entry = ttk.Entry(path_payload_frame, font=("Segoe UI", 12), width=50)
-            self.path_payload_entry.insert(0, "Enter path to path payload list file")
-            self.path_payload_entry.config(foreground='#808080')  # Light gray color
-            self.path_payload_entry.bind('<FocusIn>', lambda e: self._clear_placeholder(e, "Enter path to path payload list file"))
-            self.path_payload_entry.bind('<FocusOut>', lambda e: self._restore_placeholder(e, "Enter path to path payload list file"))
-            self.path_payload_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            
-            browse_btn = ttk.Button(path_payload_frame, text="Browse", style='Accent.TButton',
-                                  command=lambda: self._browse_file(self.path_payload_entry))
-            browse_btn.pack(side=tk.LEFT, padx=(10, 0))
-            
-            # Collaborator Domain input
-            collab_frame = ttk.Frame(input_frame)
-            collab_frame.pack(fill=tk.X, padx=20, pady=10)
-            
-            collab_label = ttk.Label(collab_frame, text="🔗 Collaborator Domain:", font=("Segoe UI", 12), width=15)
-            collab_label.pack(side=tk.LEFT, padx=(0, 10))
-            
-            self.collab_entry = ttk.Entry(collab_frame, font=("Segoe UI", 12), width=50)
-            self.collab_entry.insert(0, "Enter collaborator domain (optional)")
-            self.collab_entry.config(foreground='#808080')  # Light gray color
-            self.collab_entry.bind('<FocusIn>', lambda e: self._clear_placeholder(e, "Enter collaborator domain (optional)"))
-            self.collab_entry.bind('<FocusOut>', lambda e: self._restore_placeholder(e, "Enter collaborator domain (optional)"))
-            self.collab_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            
-            # Bruteforce Attack option
-            brute_frame = ttk.Frame(input_frame)
-            brute_frame.pack(fill=tk.X, padx=20, pady=10)
-            
-            brute_label = ttk.Label(brute_frame, text="🔓 Bruteforce Attack:", font=("Segoe UI", 12), width=15)
-            brute_label.pack(side=tk.LEFT, padx=(0, 10))
-            
-            self.brute_var = tk.StringVar(value="no")
-            ttk.Radiobutton(brute_frame, text="Yes", value="yes", variable=self.brute_var).pack(side=tk.LEFT, padx=(0, 20))
-            ttk.Radiobutton(brute_frame, text="No", value="no", variable=self.brute_var).pack(side=tk.LEFT)
-            
+            if hasattr(self, 'ssrf_window') and self.ssrf_window.winfo_exists():
+                self.ssrf_window.lift()
+                return
+            self.ssrf_window = SSRFScannerWindow(self)
+            self.ssrf_window.protocol("WM_DELETE_WINDOW", lambda: self._on_child_close(self.ssrf_window))
+            self.ssrf_window.grab_set()
+        elif scanner_type == "SSTI":
+            if hasattr(self, 'ssti_window') and self.ssti_window.winfo_exists():
+                self.ssti_window.lift()
+                return
+            self.ssti_window = SSTIScannerWindow(self)
+            self.ssti_window.protocol("WM_DELETE_WINDOW", lambda: self._on_child_close(self.ssti_window))
+            self.ssti_window.grab_set()
         elif scanner_type == "XSS":
-            # Workers input
-            workers_frame = ttk.Frame(input_frame)
-            workers_frame.pack(fill=tk.X, padx=20, pady=10)
-            
-            workers_label = ttk.Label(workers_frame, text="⚡ Workers:", font=("Segoe UI", 12), width=15)
-            workers_label.pack(side=tk.LEFT, padx=(0, 10))
-            
-            self.workers_entry = ttk.Entry(workers_frame, font=("Segoe UI", 12), width=10)
-            self.workers_entry.insert(0, "3")
-            self.workers_entry.pack(side=tk.LEFT)
-            
-            # Output Format selection
-            output_frame = ttk.Frame(input_frame)
-            output_frame.pack(fill=tk.X, padx=20, pady=10)
-            
-            output_label = ttk.Label(output_frame, text="📊 Output Format:", font=("Segoe UI", 12), width=15)
-            output_label.pack(side=tk.LEFT, padx=(0, 10))
-            
-            self.output_vars = {}
-            formats = ['json', 'csv', 'xml']
-            for fmt in formats:
-                var = tk.BooleanVar()
-                self.output_vars[fmt] = var
-                ttk.Checkbutton(output_frame, 
-                              text=fmt.upper(),
-                              variable=var).pack(side=tk.LEFT, padx=(0, 20))
-            
-            # Output Filename
-            filename_frame = ttk.Frame(input_frame)
-            filename_frame.pack(fill=tk.X, padx=20, pady=10)
-            
-            filename_label = ttk.Label(filename_frame, text="💾 Output File:", font=("Segoe UI", 12), width=15)
-            filename_label.pack(side=tk.LEFT, padx=(0, 10))
-            
-            self.output_file_entry = ttk.Entry(filename_frame, font=("Segoe UI", 12), width=50)
-            self.output_file_entry.insert(0, "xss_report")
-            self.output_file_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        # Common inputs for all scanners
-        # Proxy input
-        proxy_frame = ttk.Frame(input_frame)
-        proxy_frame.pack(fill=tk.X, padx=20, pady=10)
-        
-        proxy_label = ttk.Label(proxy_frame, text="🔒 Proxy:", font=("Segoe UI", 12), width=15)
-        proxy_label.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.proxy_entry = ttk.Entry(proxy_frame, font=("Segoe UI", 12), width=50)
-        self.proxy_entry.insert(0, "Enter proxy (e.g., 127.0.0.1:8080)")
-        self.proxy_entry.config(foreground='#808080')  # Light gray color
-        self.proxy_entry.bind('<FocusIn>', lambda e: self._clear_placeholder(e, "Enter proxy (e.g., 127.0.0.1:8080)"))
-        self.proxy_entry.bind('<FocusOut>', lambda e: self._restore_placeholder(e, "Enter proxy (e.g., 127.0.0.1:8080)"))
-        self.proxy_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        # Threads input
-        threads_frame = ttk.Frame(input_frame)
-        threads_frame.pack(fill=tk.X, padx=20, pady=10)
-        
-        threads_label = ttk.Label(threads_frame, text="⚡ Threads:", font=("Segoe UI", 12), width=15)
-        threads_label.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.threads_entry = ttk.Entry(threads_frame, font=("Segoe UI", 12), width=10)
-        self.threads_entry.insert(0, "10")
-        self.threads_entry.pack(side=tk.LEFT)
-        
-        # Buttons with modern design
-        button_frame = ttk.Frame(config_frame)
-        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0), anchor='s')
-        
-        # Back button on the left
-        back_btn = ttk.Button(button_frame, 
-                            text="← Back to Menu",
-                            style='Accent.TButton',
-                            command=self._show_main_menu)
-        back_btn.pack(side=tk.LEFT)
-        
-        # Scan buttons on the right
-        scan_buttons_frame = ttk.Frame(button_frame)
-        scan_buttons_frame.pack(side=tk.RIGHT)
-        
-        start_btn = ttk.Button(scan_buttons_frame, text="▶️ Start Scan",
-                             style='Success.TButton',
-                             command=lambda: self._start_scan(scanner_type))
-        start_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
-        stop_btn = ttk.Button(scan_buttons_frame, text="⏹️ Stop Scan",
-                            style='Danger.TButton',
-                            command=self._stop_scan)
-        stop_btn.pack(side=tk.LEFT)
-        
-        # Create Results tab
-        results_frame = ttk.Frame(self.notebook)
-        self.notebook.add(results_frame, text="Scan Results")
-        
-        # Results section with modern design
-        self.results_text = scrolledtext.ScrolledText(results_frame,
-                                                    font=("Consolas", 11),
-                                                    bg='#2d2d2d',
-                                                    fg='white',
-                                                    insertbackground='white')
-        self.results_text.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-        
-        # Add tab change event handler
-        self.notebook.bind('<<NotebookTabChanged>>', lambda e: self._on_tab_changed(e, scanner_type))
-
-    def _on_tab_changed(self, event, scanner_type):
-        """Handle tab change events"""
-        current_tab = self.notebook.select()
-        tab_text = self.notebook.tab(current_tab, "text")
-        
-        if tab_text == "Scan Results":
-            # Switch to results tab
-            self.notebook.select(1)  # Switch to results tab
+            if hasattr(self, 'xss_window') and self.xss_window.winfo_exists():
+                self.xss_window.lift()
+                return
+            self.xss_window = XSSScannerWindow(self)
+            self.xss_window.protocol("WM_DELETE_WINDOW", lambda: self._on_child_close(self.xss_window))
+            self.xss_window.grab_set()
         else:
-            # Switch to configuration tab
-            self.notebook.select(0)  # Switch to config tab
+            messagebox.showerror("Error", f"Unknown scanner type: {scanner_type}")
 
     def _show_main_menu(self):
         """Show the main menu and hide scanner interface"""
@@ -666,7 +431,7 @@ class ScannerApp(tk.Tk):
                 try:
                     scanner = scanner_module.LFIScanner(url, threads=threads)
                 except ImportError:
-                    self._append_text("Error: LFI scanner module not found. Please ensure FinalLFI.py exists.\n")
+                    self._append_text("Error: LFI scanner module not found. Please ensure LFI.py exists.\n")
                     return
             elif scanner_type == "SSRF":
                 try:
@@ -682,6 +447,19 @@ class ScannerApp(tk.Tk):
                     return
                 except ImportError:
                     self._append_text("Error: SSRF scanner module not found. Please ensure project30.py exists.\n")
+                    return
+            elif scanner_type == "SSTI":
+                try:
+                    from SSTI import SSTIScanner
+                    scanner = SSTIScanner(verbose=True, crawl=True)
+                    results = scanner.scan(url)
+                    for result in results:
+                        self._append_text(f"{json.dumps(result, indent=2)}\n")
+                    self.status_label.config(text="Scan completed", foreground="#00C851")
+                    self.progress_var.set(100)
+                    return
+                except ImportError:
+                    self._append_text("Error: SSTI scanner module not found. Please ensure SSTI.py exists.\n")
                     return
             elif scanner_type == "XSS":
                 try:
@@ -943,7 +721,7 @@ class LFIScannerWindow(tk.Toplevel):
 
     def _run_scan(self, urls, params):
         try:
-            from FinalLFI import LFIScanner
+            from LFI import LFIScanner
             scanner = LFIScanner(
                 proxy=params['proxy'],
                 threads=params['threads'],
@@ -1226,7 +1004,7 @@ class SSRFScannerWindow(tk.Toplevel):
 
     def _run_scan(self, url, url_list, threads, proxy, payload_list, path_payload_list, collaborator, bruteforceattack, output):
         try:
-            from project30 import SSRFScanner
+            from SSRF import SSRFScanner
             scanner = SSRFScanner(
                 url=url or None,
                 url_list=url_list or None,
@@ -1303,6 +1081,125 @@ class XSSScannerWindow(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         self.title("XSS Scanner")
+        self.geometry("800x600")
+        self.configure(bg=parent.current_bg)
+        self._create_widgets()
+        
+        # Protocol handler for window close
+        self.protocol("WM_DELETE_WINDOW", self._on_back)
+        
+        # Store button reference
+        self.scan_running = False
+        
+    def _create_widgets(self):
+        # Main container
+        main_frame = ttk.Frame(self)
+        main_frame.pack(expand=True, fill=tk.BOTH, padx=20, pady=20)
+        
+        # Input frame
+        input_frame = ttk.Frame(main_frame)
+        input_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # URL Entry
+        url_label = ttk.Label(input_frame, text="Target URL:")
+        url_label.pack(anchor=tk.W)
+        
+        self.url_entry = ttk.Entry(input_frame, width=50)
+        self.url_entry.pack(fill=tk.X, pady=(5, 10))
+        
+        # Parameters Entry
+        params_label = ttk.Label(input_frame, text="Parameters (comma-separated):")
+        params_label.pack(anchor=tk.W)
+        
+        self.params_entry = ttk.Entry(input_frame, width=50)
+        self.params_entry.pack(fill=tk.X, pady=(5, 10))
+        
+        # Buttons frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=10)
+        
+        # Back button
+        back_btn = ttk.Button(button_frame, text="Back", command=self._on_back)
+        back_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Scan button
+        self.scan_button = ttk.Button(button_frame, text="Start Scan", command=self._start_scan)
+        self.scan_button.pack(side=tk.LEFT, padx=5)
+        
+        # Output Text
+        self.output_text = scrolledtext.ScrolledText(main_frame, height=20)
+        self.output_text.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        
+    def _on_back(self):
+        self.parent._show_main_menu()
+        self.destroy()
+        
+    def _start_scan(self):
+        if self.scan_running:
+            return
+            
+        url = self.url_entry.get().strip()
+        params = self.params_entry.get().strip()
+        
+        if not url or not params:
+            messagebox.showerror("Error", "Please fill in all fields")
+            return
+            
+        # Disable scan button
+        self.scan_running = True
+        self.scan_button.config(state='disabled')
+        
+        # Clear output
+        self.output_text.delete(1.0, tk.END)
+        
+        # Start scan in a separate thread
+        params_dict = {
+            'url': url,
+            'params': params.split(',')
+        }
+        
+        scan_thread = threading.Thread(target=self._run_scan, args=(params_dict,))
+        scan_thread.daemon = True
+        scan_thread.start()
+        
+    def _run_scan(self, params):
+        try:
+            # Redirect print to the text widget
+            original_print = print
+            def custom_print(*args, **kwargs):
+                # Get the message
+                output = " ".join(map(str, args))
+                # Schedule the UI update in the main thread
+                self.after(0, self._append_text, output + "\n")
+            
+            # Replace the print function
+            print = custom_print
+            
+            # Run the scan
+            scanner = xss_module.XSSScanner()
+            scanner.scan(params['url'], params['params'])
+            
+        except Exception as e:
+            self.after(0, messagebox.showerror, "Error", str(e))
+        finally:
+            # Restore the original print function
+            print = original_print
+            # Re-enable the scan button in the main thread
+            self.after(0, self._enable_scan_button)
+            
+    def _enable_scan_button(self):
+        self.scan_running = False
+        self.scan_button.config(state='normal')
+            
+    def _append_text(self, text):
+        self.output_text.insert(tk.END, text)
+        self.output_text.see(tk.END)
+
+class SSTIScannerWindow(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.title("SSTI Scanner")
         self.configure(bg=self.parent.current_bg)
         self.style = ttk.Style(self)
         self.style.configure('Custom.TEntry', 
@@ -1338,31 +1235,27 @@ class XSSScannerWindow(tk.Toplevel):
         self.proxy_entry = ttk.Entry(input_frame, width=30, style='Custom.TEntry')
         self.proxy_entry.grid(row=1, column=1)
         
-        # Workers Input
-        ttk.Label(input_frame, text="Workers:").grid(row=1, column=2, sticky=tk.W)
-        self.workers_entry = ttk.Entry(input_frame, width=10, style='Custom.TEntry')
-        self.workers_entry.insert(0, "3")
-        self.workers_entry.grid(row=1, column=3)
+        # Threads Input
+        ttk.Label(input_frame, text="Threads:").grid(row=1, column=2, sticky=tk.W)
+        self.threads_entry = ttk.Entry(input_frame, width=10, style='Custom.TEntry')
+        self.threads_entry.insert(0, "10")
+        self.threads_entry.grid(row=1, column=3)
         
-        # Output Format
-        ttk.Label(input_frame, text="Output Format:").grid(row=2, column=0, sticky=tk.W, pady=8)
-        self.output_frame = ttk.Frame(input_frame)
-        self.output_frame.grid(row=2, column=1, columnspan=3, sticky=tk.W)
+        # Crawl Option
+        ttk.Label(input_frame, text="Crawl:").grid(row=2, column=0, sticky=tk.W, pady=8)
+        self.crawl_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(input_frame, variable=self.crawl_var).grid(row=2, column=1, sticky=tk.W)
         
-        self.output_vars = {}
-        formats = ['json', 'csv', 'xml']
-        for i, fmt in enumerate(formats):
-            var = tk.BooleanVar()
-            self.output_vars[fmt] = var
-            ttk.Checkbutton(self.output_frame, 
-                           text=fmt.upper(),
-                           variable=var).grid(row=0, column=i, padx=5)
+        # Crawl Depth
+        ttk.Label(input_frame, text="Crawl Depth:").grid(row=2, column=2, sticky=tk.W)
+        self.depth_entry = ttk.Entry(input_frame, width=10, style='Custom.TEntry')
+        self.depth_entry.insert(0, "2")
+        self.depth_entry.grid(row=2, column=3)
         
-        # Output Filename
-        ttk.Label(input_frame, text="Output File:").grid(row=3, column=0, sticky=tk.W, pady=8)
-        self.output_file_entry = ttk.Entry(input_frame, width=50, style='Custom.TEntry')
-        self.output_file_entry.insert(0, "xss_report")
-        self.output_file_entry.grid(row=3, column=1, columnspan=2)
+        # Verbose Output
+        ttk.Label(input_frame, text="Verbose:").grid(row=3, column=0, sticky=tk.W, pady=8)
+        self.verbose_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(input_frame, variable=self.verbose_var).grid(row=3, column=1, sticky=tk.W)
         
         # Buttons
         btn_frame = ttk.Frame(container)
@@ -1399,38 +1292,28 @@ class XSSScannerWindow(tk.Toplevel):
             messagebox.showerror("Input Error", "Target URL is required.")
             return
 
-        # Get selected output formats
-        output_formats = [
-            fmt for fmt, var in self.output_vars.items()
-            if var.get()
-        ]
-        
-        if not output_formats:
-            messagebox.showerror("Input Error", "Please select at least one output format.")
-            return
-
         params = {
             'url': url,
             'proxy': self.proxy_entry.get().strip() or None,
-            'workers': int(self.workers_entry.get()),
-            'output_formats': output_formats,
-            'output_file': self.output_file_entry.get().strip()
+            'threads': int(self.threads_entry.get()),
+            'crawl': self.crawl_var.get(),
+            'crawl_depth': int(self.depth_entry.get()),
+            'verbose': self.verbose_var.get()
         }
 
         self.scan_button.config(state='disabled')
-        self._append_text("Starting XSS scan...\n")
+        self._append_text("Starting SSTI scan...\n")
         threading.Thread(target=self._run_scan, args=(params,), daemon=True).start()
 
     def _run_scan(self, params):
         try:
-            from XSS import XSSHunter
-            scanner = XSSHunter(
-                target_url=params['url'],
-                output_formats=params['output_formats'],
-                output_file=params['output_file'],
-                proxy_url=params['proxy']
+            from SSTI import SSTIScanner
+            scanner = SSTIScanner(
+                proxies=params['proxy'],
+                verbose=params['verbose'],
+                crawl=params['crawl'],
+                crawl_depth=params['crawl_depth']
             )
-            scanner.max_workers = params['workers']
             
             # Override the print function to capture output
             def custom_print(*args, **kwargs):
@@ -1444,7 +1327,13 @@ class XSSScannerWindow(tk.Toplevel):
             builtins.print = custom_print
             
             try:
-                scanner.start_scan()
+                results = scanner.scan(params['url'])
+                if results:
+                    self._append_text("\nVulnerabilities found:\n")
+                    for result in results:
+                        self._append_text(f"{json.dumps(result, indent=2)}\n")
+                else:
+                    self._append_text("\nNo vulnerabilities found.\n")
             finally:
                 # Restore original print function
                 builtins.print = original_print
@@ -1461,6 +1350,20 @@ class XSSScannerWindow(tk.Toplevel):
         self.result_text.insert(tk.END, text)
         self.result_text.see(tk.END)
         self.result_text.config(state='disabled')
+
+    def _clear_placeholder(self, event, placeholder_text):
+        """Clear placeholder text when entry gets focus"""
+        widget = event.widget
+        if widget.get() == placeholder_text:
+            widget.delete(0, tk.END)
+            widget.config(foreground='#000000')  # Black color for user input
+
+    def _restore_placeholder(self, event, placeholder_text):
+        """Restore placeholder text if entry is empty"""
+        widget = event.widget
+        if not widget.get():
+            widget.insert(0, placeholder_text)
+            widget.config(foreground='#808080')  # Light gray color for placeholder
 
 if __name__ == '__main__':
     app = ScannerApp()
