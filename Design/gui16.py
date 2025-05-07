@@ -664,7 +664,15 @@ class ScannerApp(tk.Tk):
             # Initialize scanner based on type
             if scanner_type == "LFI":
                 try:
-                    scanner = scanner_module.LFIScanner(url, threads=threads)
+                    scanner = scanner_module.LFIScanner(threads=threads)
+                    # Run LFI scan without callbacks
+                    results = scanner.scan(url)
+                    # Display results
+                    for result in results:
+                        self._append_text(f"{json.dumps(result, indent=2)}\n")
+                    self.status_label.config(text="Scan completed", foreground="#00C851")
+                    self.progress_var.set(100)
+                    return
                 except ImportError:
                     self._append_text("Error: LFI scanner module not found. Please ensure FinalLFI.py exists.\n")
                     return
@@ -797,43 +805,57 @@ class LFIScannerWindow(tk.Toplevel):
         input_frame = ttk.Frame(notebook)
         notebook.add(input_frame, text="Scan Configuration")
         
-        # URL Input
-        ttk.Label(input_frame, text="Target URL:").grid(row=0, column=0, sticky=tk.W, pady=8)
+        # إعداد نمط زر Browse الأزرق
+        style = ttk.Style()
+        style.configure('Blue.TButton', background='#38bdf8', foreground='#0f172a', font=('Segoe UI', 11, 'bold'))
+        style.map('Blue.TButton', background=[('active', '#7dd3fc'), ('pressed', '#0284c7')])
+
+        # Target URL
+        row = 0
+        ttk.Label(input_frame, text="🌐 Target URL:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.url_entry = ttk.Entry(input_frame, width=60, style='Custom.TEntry')
-        self.url_entry.grid(row=0, column=1, columnspan=3, padx=5)
-        
-        # URL List Input
-        ttk.Label(input_frame, text="URL-List File:").grid(row=1, column=0, sticky=tk.W, pady=8)
+        self.url_entry.insert(0, "Enter target URL (e.g., http://example.com)")
+        self.url_entry.grid(row=row, column=1, columnspan=2, padx=5)
+
+        # URL List
+        row += 1
+        ttk.Label(input_frame, text="📋 URL List:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.url_list_entry = ttk.Entry(input_frame, width=50, style='Custom.TEntry')
-        self.url_list_entry.grid(row=1, column=1, columnspan=2)
-        ttk.Button(input_frame, text="Browse", command=self._browse_urllist).grid(row=1, column=3)
-        
+        self.url_list_entry.insert(0, "Enter path to URL list file (optional)")
+        self.url_list_entry.grid(row=row, column=1)
+        ttk.Button(input_frame, text="Browse", style='Blue.TButton', command=self._browse_urllist).grid(row=row, column=2, padx=5)
+
         # Proxy Input
-        ttk.Label(input_frame, text="Proxy:").grid(row=2, column=0, sticky=tk.W, pady=8)
+        row += 1
+        ttk.Label(input_frame, text="🔒 Proxy:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.proxy_entry = ttk.Entry(input_frame, width=30, style='Custom.TEntry')
-        self.proxy_entry.grid(row=2, column=1)
+        self.proxy_entry.grid(row=row, column=1)
         
         # Threads Input
-        ttk.Label(input_frame, text="Threads:").grid(row=2, column=2, sticky=tk.W)
+        row += 1
+        ttk.Label(input_frame, text="⚡ Threads:", font=("Segoe UI", 12)).grid(row=row, column=2, sticky=tk.W)
         self.threads_entry = ttk.Entry(input_frame, width=10, style='Custom.TEntry')
         self.threads_entry.insert(0, "10")
-        self.threads_entry.grid(row=2, column=3)
+        self.threads_entry.grid(row=row, column=3)
         
         # Wordlist Input
-        ttk.Label(input_frame, text="Wordlist:").grid(row=3, column=0, sticky=tk.W, pady=8)
+        row += 1
+        ttk.Label(input_frame, text="📚 Wordlist:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.wordlist_entry = ttk.Entry(input_frame, width=50, style='Custom.TEntry')
-        self.wordlist_entry.grid(row=3, column=1, columnspan=2)
-        ttk.Button(input_frame, text="Browse", command=self._browse_wordlist).grid(row=3, column=3)
+        self.wordlist_entry.grid(row=row, column=1, columnspan=2)
+        ttk.Button(input_frame, text="Browse", style='Blue.TButton', command=self._browse_wordlist).grid(row=row, column=3, padx=5)
         
         # Cookies Input
-        ttk.Label(input_frame, text="Cookies:").grid(row=4, column=0, sticky=tk.W, pady=8)
+        row += 1
+        ttk.Label(input_frame, text="Cookies:").grid(row=row, column=0, sticky=tk.W, pady=8)
         self.cookies_entry = ttk.Entry(input_frame, width=60, style='Custom.TEntry')
-        self.cookies_entry.grid(row=4, column=1, columnspan=3)
+        self.cookies_entry.grid(row=row, column=1, columnspan=3)
         
         # Exploit Categories
-        ttk.Label(input_frame, text="Exploit Categories:").grid(row=5, column=0, columnspan=4, sticky=tk.W, pady=8)
+        row += 1
+        ttk.Label(input_frame, text="Exploit Categories:").grid(row=row, column=0, columnspan=4, sticky=tk.W, pady=8)
         self.categories_frame = ttk.Frame(input_frame)
-        self.categories_frame.grid(row=6, column=0, columnspan=4, sticky=tk.W)
+        self.categories_frame.grid(row=row+1, column=0, columnspan=4, sticky=tk.W)
         
         self.category_vars = {}
         categories = [
@@ -858,9 +880,10 @@ class LFIScannerWindow(tk.Toplevel):
             cb.pack(anchor=tk.W, pady=2)
         
         # Output Format
-        ttk.Label(input_frame, text="Output Format:").grid(row=7, column=0, sticky=tk.W)
+        row += 1
+        ttk.Label(input_frame, text="Output Format:").grid(row=row, column=0, sticky=tk.W)
         self.output_var = tk.StringVar(value="json")
-        ttk.OptionMenu(input_frame, self.output_var, "json", "json", "csv", "xml").grid(row=7, column=1, sticky=tk.W)
+        ttk.OptionMenu(input_frame, self.output_var, "json", "json", "csv", "xml").grid(row=row, column=1, sticky=tk.W)
         
         # Buttons
         btn_frame = ttk.Frame(container)
@@ -1101,60 +1124,70 @@ class SSRFScannerWindow(tk.Toplevel):
         input_frame = ttk.Frame(notebook)
         notebook.add(input_frame, text="Scan Configuration")
         
-        # URL Input
-        ttk.Label(input_frame, text="Target URL:").grid(row=0, column=0, sticky=tk.W, pady=8)
+        # إعداد نمط زر Browse الأزرق
+        style = ttk.Style()
+        style.configure('Blue.TButton', background='#38bdf8', foreground='#0f172a', font=('Segoe UI', 11, 'bold'))
+        style.map('Blue.TButton', background=[('active', '#7dd3fc'), ('pressed', '#0284c7')])
+
+        # Target URL
+        row = 0
+        ttk.Label(input_frame, text="🌐 Target URL:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.url_entry = ttk.Entry(input_frame, width=60, style='Custom.TEntry')
-        self.url_entry.grid(row=0, column=1, columnspan=3, padx=5)
-        
-        # URL List Input
-        ttk.Label(input_frame, text="URL-List File:").grid(row=1, column=0, sticky=tk.W, pady=8)
+        self.url_entry.insert(0, "Enter target URL (e.g., http://example.com)")
+        self.url_entry.grid(row=row, column=1, columnspan=2, padx=5)
+
+        # URL List
+        row += 1
+        ttk.Label(input_frame, text="📋 URL List:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.url_list_entry = ttk.Entry(input_frame, width=50, style='Custom.TEntry')
-        self.url_list_entry.grid(row=1, column=1, columnspan=2)
-        ttk.Button(input_frame, text="Browse", command=self._browse_urllist).grid(row=1, column=3)
-        
-        # Proxy Input
-        ttk.Label(input_frame, text="Proxy:").grid(row=2, column=0, sticky=tk.W, pady=8)
-        self.proxy_entry = ttk.Entry(input_frame, width=30, style='Custom.TEntry')
-        self.proxy_entry.grid(row=2, column=1)
-        
-        # Threads Input
-        ttk.Label(input_frame, text="Threads:").grid(row=2, column=2, sticky=tk.W)
-        self.threads_entry = ttk.Entry(input_frame, width=10, style='Custom.TEntry')
-        self.threads_entry.insert(0, "20")
-        self.threads_entry.grid(row=2, column=3)
-        
-        # Payload List Input
-        ttk.Label(input_frame, text="Payload List:").grid(row=3, column=0, sticky=tk.W, pady=8)
+        self.url_list_entry.insert(0, "Enter path to URL list file (optional)")
+        self.url_list_entry.grid(row=row, column=1)
+        ttk.Button(input_frame, text="Browse", style='Blue.TButton', command=self._browse_urllist).grid(row=row, column=2, padx=5)
+
+        # Payload List
+        row += 1
+        ttk.Label(input_frame, text="🎯 Payload List:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.payload_entry = ttk.Entry(input_frame, width=50, style='Custom.TEntry')
-        self.payload_entry.insert(0, "payload.txt")
-        self.payload_entry.grid(row=3, column=1, columnspan=2)
-        ttk.Button(input_frame, text="Browse", command=self._browse_payload).grid(row=3, column=3)
-        
-        # Path Payload List Input
-        ttk.Label(input_frame, text="Path Payload List:").grid(row=4, column=0, sticky=tk.W, pady=8)
+        self.payload_entry.insert(0, "Enter path to payload list file")
+        self.payload_entry.grid(row=row, column=1)
+        ttk.Button(input_frame, text="Browse", style='Blue.TButton', command=self._browse_payload).grid(row=row, column=2, padx=5)
+
+        # Path Payload List
+        row += 1
+        ttk.Label(input_frame, text="📂 Path Payload List:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.path_payload_entry = ttk.Entry(input_frame, width=50, style='Custom.TEntry')
-        self.path_payload_entry.insert(0, "pathpayload.txt")
-        self.path_payload_entry.grid(row=4, column=1, columnspan=2)
-        ttk.Button(input_frame, text="Browse", command=self._browse_path_payload).grid(row=4, column=3)
-        
-        # Collaborator Input
-        ttk.Label(input_frame, text="Collaborator:").grid(row=5, column=0, sticky=tk.W, pady=8)
+        self.path_payload_entry.insert(0, "Enter path to path payload list file")
+        self.path_payload_entry.grid(row=row, column=1)
+        ttk.Button(input_frame, text="Browse", style='Blue.TButton', command=self._browse_path_payload).grid(row=row, column=2, padx=5)
+
+        # Collaborator
+        row += 1
+        ttk.Label(input_frame, text="🔗 Collaborator:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.collab_entry = ttk.Entry(input_frame, width=50, style='Custom.TEntry')
-        self.collab_entry.grid(row=5, column=1, columnspan=3)
-        
-        # Brute Force Attack Option
-        ttk.Label(input_frame, text="Brute Force Attack:").grid(row=6, column=0, sticky=tk.W, pady=8)
+        self.collab_entry.insert(0, "Enter collaborator domain (optional)")
+        self.collab_entry.grid(row=row, column=1, columnspan=2, padx=5)
+
+        # Brute Force Attack
+        row += 1
+        ttk.Label(input_frame, text="🔓 Bruteforce Attack:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.brute_var = tk.StringVar(value="no")
-        brute_frame = ttk.Frame(input_frame)
-        brute_frame.grid(row=6, column=1, columnspan=3, sticky=tk.W)
-        ttk.Radiobutton(brute_frame, text="Yes", value="yes", variable=self.brute_var).pack(side=tk.LEFT, padx=(0, 20))
-        ttk.Radiobutton(brute_frame, text="No", value="no", variable=self.brute_var).pack(side=tk.LEFT)
-        
-        # Output Format
-        ttk.Label(input_frame, text="Output Format:").grid(row=7, column=0, sticky=tk.W, pady=8)
-        self.output_var = tk.StringVar(value="json")
-        ttk.OptionMenu(input_frame, self.output_var, "json", "json", "csv", "xml").grid(row=7, column=1, sticky=tk.W)
-        
+        ttk.Radiobutton(input_frame, text="Yes", value="yes", variable=self.brute_var).grid(row=row, column=1, sticky=tk.W)
+        ttk.Radiobutton(input_frame, text="No", value="no", variable=self.brute_var).grid(row=row, column=2, sticky=tk.W)
+
+        # Proxy
+        row += 1
+        ttk.Label(input_frame, text="🔒 Proxy:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
+        self.proxy_entry = ttk.Entry(input_frame, width=50, style='Custom.TEntry')
+        self.proxy_entry.insert(0, "Enter proxy (e.g., 127.0.0.1:8080)")
+        self.proxy_entry.grid(row=row, column=1, columnspan=2, padx=5)
+
+        # Threads
+        row += 1
+        ttk.Label(input_frame, text="⚡ Threads:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
+        self.threads_entry = ttk.Entry(input_frame, width=10, style='Custom.TEntry')
+        self.threads_entry.insert(0, "10")
+        self.threads_entry.grid(row=row, column=1, sticky=tk.W)
+
         # Buttons
         btn_frame = ttk.Frame(container)
         btn_frame.pack(fill=tk.X, pady=10)
