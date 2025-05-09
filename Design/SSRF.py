@@ -1,15 +1,10 @@
 import concurrent.futures
-import subprocess
 import re
-import time
 import ipaddress
-from urllib.parse import quote, urljoin, urlparse, parse_qs, urlunparse
+from urllib.parse import quote, urljoin, urlparse, parse_qs
 import requests
 import urllib3
 from bs4 import BeautifulSoup
-from colorama import Fore, Style
-import shutil
-import argparse
 import json
 import csv
 from datetime import datetime  
