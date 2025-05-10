@@ -13,7 +13,7 @@ COLOR_CYAN = "\033[96m"
 COLOR_WHITE = "\033[97m"
 COLOR_RESET = "\033[0m"
 
-class Lab5Scenario(BaseLabScenario):
+class Scenario5(BaseLabScenario):
     """Exploit for 'Server-side template injection with information disclosure' lab"""
     
     def __init__(self, target_url, session):  # Updated signature
@@ -22,11 +22,11 @@ class Lab5Scenario(BaseLabScenario):
 
     @classmethod
     def detect(cls, response_text):
-        """Check if this is Lab 5 by identifying text"""
+        """Check if this is Scenario 5 by identifying text"""
         return "Server-side template injection with information disclosure via user-supplied objects" in response_text
     
     def lab_name(self):
-        return "Server-side template injection with information disclosure (Lab 5)"
+        return "Server-side template injection with information disclosure (Scenario 5)"
 
     def get_template_csrf(self):
         """Get CSRF token from template editing page"""

@@ -13,7 +13,7 @@ COLOR_CYAN = "\033[96m"
 COLOR_WHITE = "\033[97m"
 COLOR_RESET = "\033[0m"
 
-class Lab2Scenario(BaseLabScenario):
+class Scenario2(BaseLabScenario):
     """Specific implementation for PortSwigger Lab 2: Basic SSTI in code context"""
     def __init__(self, target_url, session):  # Match parent signature
         super().__init__(target_url, session)
@@ -137,7 +137,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     print("\n=== Starting Lab 2 Exploitation ===")
-    exploiter = Lab2Scenario(args.url.strip(), args.proxy)
+    exploiter = Scenario2(args.url.strip(), args.proxy)
     
     if exploiter.exploit() and args.shell:
         exploiter.interactive_shell()

@@ -13,7 +13,7 @@ COLOR_CYAN = "\033[96m"
 COLOR_WHITE = "\033[97m"
 COLOR_RESET = "\033[0m"
 
-class Lab3Scenario(BaseLabScenario):
+class Scenario3(BaseLabScenario):
     """Exploit for 'Server-side template injection using documentation' lab"""
     
     def __init__(self, target_url, session):  # Match parent class signature
@@ -127,7 +127,7 @@ if __name__ == "__main__":
         session.proxies = {'http': proxy, 'https': proxy}
     
     print("\n=== Starting Lab 3 Exploitation ===")
-    exploiter = Lab3Scenario(args.url.strip(), session)
+    exploiter = Scenario3(args.url.strip(), session)
     
     if exploiter.exploit() and args.shell:
         exploiter.interactive_shell()

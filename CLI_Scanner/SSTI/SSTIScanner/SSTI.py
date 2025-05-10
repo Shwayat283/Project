@@ -16,10 +16,10 @@ from urllib.parse import urlparse, urljoin, parse_qs
 from bs4 import BeautifulSoup
 from base_scenario import BaseLabScenario
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from lab2 import Lab2Scenario
-from lab3 import Lab3Scenario
-from lab5 import Lab5Scenario
-from lab6 import Lab6Scenario
+from scenario2 import Scenario2
+from scenario3 import Scenario3
+from scenario5 import Scenario5
+from scenario6 import Scenario6
 
 
 # Disable SSL/TLS warnings for proxy debugging
@@ -59,16 +59,16 @@ class LabHandler:
     """Detects and handles PortSwigger lab scenarios"""
     
     LAB_IDENTIFIERS = {
-        r"Basic server-side template injection \(code context\)": Lab2Scenario,
-        r"Server-side template injection using documentation": Lab3Scenario,
-        r"Server-side template injection with information disclosure via user-supplied objects": Lab5Scenario,
-        r"Server-side template injection in a sandboxed environment": Lab6Scenario,
+        r"Basic server-side template injection \(code context\)": Scenario2,
+        r"Server-side template injection using documentation": Scenario3,
+        r"Server-side template injection with information disclosure via user-supplied objects": Scenario5,
+        r"Server-side template injection in a sandboxed environment": Scenario6,
 
         # Add other lab patterns and classes here
-        # "Server-side template injection using documentation": Lab3Scenario,
+        # "Server-side template injection using documentation": Scenario3,
         
-        # "Server-side template injection with information disclosure via user-supplied objects": Lab5Scenario,
-        # "Server-side template injection in a sandboxed environment": Lab6Scenario
+        # "Server-side template injection with information disclosure via user-supplied objects": Scenario5,
+        # "Server-side template injection in a sandboxed environment": Scenario6
     }   
 
     def __init__(self, session):

