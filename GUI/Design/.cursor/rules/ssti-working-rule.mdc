@@ -4,34 +4,5 @@ globs:
 alwaysApply: true
 ---
 
-# Your rule content
-# always run /bin/python instead of python 
-_______
-
-___
-you are working with GUI design of the ssti scanner so i want you to just work with the @SSTI.py and the GUI that related to it like @SSTIScannerWindow.py 
-____
-
-do not ever miss with the functionality of the scanners at all i may ask you to add a new feature to scanner make sure to add things that doesn't change the methodology or the functionalaty itself of the [SSTI.py](mdc:scanners/ssti/SSTI.py) 
-
-
-____
-Add real-time attack flow visualization only to SSTIScannerWindow.py showing:
-
-Reflection tests
-
-Payloads sent
-
-Server responses
-
-Vulnerability confirmations
-
-
-
-NO changes to:
-
-Core detection logic in [SSTI.py](mdc:scanners/ssti/SSTI.py)
-
-Other scanners (XSS/SSRF/LFI)
-
+Try the code to make sure what you are asked for works.
 
