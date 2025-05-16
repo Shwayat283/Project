@@ -186,6 +186,28 @@ def save_to_csv(data, filename):
         for entry in data:
             writer.writerow([entry["URL"], entry["Payload"], entry["Parameter"]])
 
+def save_to_xml(data, filename):
+    import xml.etree.ElementTree as ET
+    root = ET.Element('results')
+    for item in data:
+        entry = ET.SubElement(root, 'entry')
+        for k, v in item.items():
+            child = ET.SubElement(entry, k)
+            child.text = str(v)
+    tree = ET.ElementTree(root)
+    tree.write(filename, encoding='utf-8', xml_declaration=True)
+
+def display_xml(data):
+    import xml.etree.ElementTree as ET
+    root = ET.Element('results')
+    for item in data:
+        entry = ET.SubElement(root, 'entry')
+        for k, v in item.items():
+            child = ET.SubElement(entry, k)
+            child.text = str(v)
+    xml_str = ET.tostring(root, encoding='utf-8').decode('utf-8')
+    return xml_str
+
 def display_csv(data):
     print(f"{'URL':<40} | {'Payload':<30} | {'Parameter'}")
     print("-" * 100)
@@ -272,6 +294,9 @@ def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
         elif args.output == "csv":
             display_csv(results)
             save_to_csv(results, "results.csv")
+        elif args.output == "xml":
+            display_xml(results)
+            save_to_xml(results, "results.xml")
     else:
         for res in results:
             print(res)

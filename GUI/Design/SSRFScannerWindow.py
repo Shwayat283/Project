@@ -4,7 +4,7 @@ import json
 import csv
 import io
 import threading
-from scanners.ssrf.SSRF import SSRFScanner
+from scanners.ssrf.SSRF import SSRFScanner, display_xml
 
 class SSRFScannerWindow(tk.Toplevel):
     def __init__(self, parent):
@@ -214,14 +214,7 @@ class SSRFScannerWindow(tk.Toplevel):
             for item in results:
                 self._append_text(json.dumps(item, indent=2) + "\n")
         elif output_format == 'xml':
-            import xml.etree.ElementTree as ET
-            root = ET.Element('results')
-            for item in results:
-                entry = ET.SubElement(root, 'entry')
-                for k, v in item.items():
-                    child = ET.SubElement(entry, k)
-                    child.text = str(v)
-            xml_str = ET.tostring(root, encoding='utf-8').decode('utf-8')
+            xml_str = display_xml(results)
             self._append_text(xml_str + "\n")
         else:  # csv
             output = io.StringIO()
