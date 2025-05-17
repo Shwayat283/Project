@@ -23,6 +23,7 @@ class XSSHunter:
         self.vulnerabilities = []
         self.crawled_urls = set()
         self.lock = threading.Lock()
+        self.stop_scan = False  # Add stop_scan flag
         
         # Configure proxy if specified
         if self.proxy_url:
@@ -75,7 +76,7 @@ class XSSHunter:
                                     for p in (category if isinstance(category, list) else [])])
 
     def crawl(self, url, depth=0):
-        if depth > self.scan_depth or url in self.crawled_urls:
+        if self.stop_scan or depth > self.scan_depth or url in self.crawled_urls:
             return
             
         self.crawled_urls.add(url)
@@ -87,19 +88,22 @@ class XSSHunter:
             
             # Process forms
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                list(executor.map(lambda form: self.test_form(form, url), soup.find_all('form')))
+                if not self.stop_scan:
+                    list(executor.map(lambda form: self.test_form(form, url), soup.find_all('form')))
             
             # Process links
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futures = []
                 for link in soup.find_all('a', href=True):
+                    if self.stop_scan:
+                        break
                     new_url = urljoin(url, link['href'])
                     if urlparse(new_url).netloc == urlparse(self.target_url).netloc:
                         futures.append(executor.submit(self.crawl, new_url, depth+1))
                 concurrent.futures.wait(futures)
             
             # Process URL parameters
-            if '?' in url:
+            if not self.stop_scan and '?' in url:
                 params = parse_qs(urlparse(url).query)
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                     list(executor.map(lambda param: self.test_url_param(url, param), params.keys()))
@@ -296,13 +300,18 @@ class XSSHunter:
 
     def start_scan(self):
         print(f"\033[94m[*] Starting scan on {self.target_url}\033[0m")
+        self.stop_scan = False  # Reset stop_scan flag
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             executor.submit(self.crawl, self.target_url)
             executor.submit(self.run_dom_tests)
 
-        print(f"\n\033[92m[+] Scan complete. Found {len(self.vulnerabilities)} vulnerabilities.\033[0m")
-        if self.output_formats:
+        if self.stop_scan:
+            print(f"\n\033[93m[!] Scan stopped by user.\033[0m")
+        else:
+            print(f"\n\033[92m[+] Scan complete. Found {len(self.vulnerabilities)} vulnerabilities.\033[0m")
+        
+        if self.output_formats and not self.stop_scan:
             self.export_reports()
 
     def run_dom_tests(self):
@@ -311,12 +320,16 @@ class XSSHunter:
             
             # Standard DOM tests
             for payload in self.get_xss_payloads('dom') + self.get_xss_payloads('polyglot'):
+                if self.stop_scan:
+                    break
                 futures.append(executor.submit(
                     self.run_dom_test, payload, 'standard'
                 ))
             
             # Hashchange tests
             for payload in self.get_xss_payloads('sink_specific')['hashchange']:
+                if self.stop_scan:
+                    break
                 futures.append(executor.submit(
                     self.run_dom_test, payload, 'hashchange'
                 ))
@@ -325,11 +338,15 @@ class XSSHunter:
             for sink, payloads in self.get_xss_payloads('sink_specific').items():
                 if sink != 'hashchange':
                     for payload in payloads:
+                        if self.stop_scan:
+                            break
                         futures.append(executor.submit(
                             self.run_dom_test, payload, 'sink', sink
                         ))
             
             for future in concurrent.futures.as_completed(futures):
+                if self.stop_scan:
+                    break
                 try:
                     future.result()
                 except Exception as e:

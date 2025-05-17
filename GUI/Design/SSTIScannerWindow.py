@@ -6,35 +6,52 @@ import io
 import threading
 from scanners.ssti.SSTI import SSTIScanner, SSTIExploiter
 import time
+from datetime import datetime
+import os
 
 class SSTIScannerWindow(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
         self.title("SSTI Scanner")
+        self.state('zoomed')  # Start maximized
         self.configure(bg=self.parent.current_bg)
         self.style = ttk.Style(self)
         self.style.configure('Custom.TEntry', 
                              fieldbackground='#2D2D44',
-                             foreground='#000000',
-                             insertcolor='#000000',
+                             foreground='#FFFFFF',
+                             insertcolor='#FFFFFF',
                              bordercolor='#3D3D54',
                              lightcolor='#3D3D54',
                              darkcolor='#3D3D54',
-                             font=('Segoe UI', 12))
+                             font=('Segoe UI', 12, 'bold'))
         self.style.configure('Accent.TButton', 
                              background='#89B4FA',
                              foreground='#1E1E2E',
                              font=('Segoe UI', 12, 'bold'))
         self.style.map('Accent.TButton',
                         background=[('active', '#A5C8FF'), ('pressed', '#7BA4F7')])
+        self.style.configure('Placeholder.TEntry',
+                             foreground='#666666',
+                             font=('Segoe UI', 12))
+        
+        # Create main frame with scrollbars
+        self.main_frame = ttk.Frame(self)
+        self.vsb = ttk.Scrollbar(self.main_frame, orient="vertical")
+        self.hsb = ttk.Scrollbar(self.main_frame, orient="horizontal")
+        
+        # Configure main frame
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        self.vsb.pack(side="right", fill="y")
+        self.hsb.pack(side="bottom", fill="x")
+        
         self._create_widgets()
         self.scanner = None
         self.flow_update_thread = None
         self.is_scanning = False
 
     def _create_widgets(self):
-        container = ttk.Frame(self, padding=15)
+        container = ttk.Frame(self.main_frame, padding=15)
         container.pack(fill=tk.BOTH, expand=True)
         notebook = ttk.Notebook(container)
         notebook.pack(fill=tk.BOTH, expand=True)
@@ -67,36 +84,54 @@ class SSTIScannerWindow(tk.Toplevel):
         input_container.grid_columnconfigure(1, weight=1)
 
         row = 0
+        # Add placeholder handling methods
+        def on_focus_in(event):
+            widget = event.widget
+            if widget.get() == widget.placeholder:
+                widget.delete(0, tk.END)
+                widget.configure(style='Custom.TEntry')
+
+        def on_focus_out(event):
+            widget = event.widget
+            if not widget.get():
+                widget.insert(0, widget.placeholder)
+                widget.configure(style='Placeholder.TEntry')
+
         # Target URL
         ttk.Label(input_container, text="🌐 Target URL:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
-        self.url_entry = ttk.Entry(input_container, width=70)
+        self.url_entry = ttk.Entry(input_container, width=70, style='Placeholder.TEntry')
+        self.url_entry.placeholder = "Enter target URL (e.g., http://example.com/page?name=)"
+        self.url_entry.insert(0, self.url_entry.placeholder)
+        self.url_entry.bind('<FocusIn>', on_focus_in)
+        self.url_entry.bind('<FocusOut>', on_focus_out)
         self.url_entry.grid(row=row, column=1, sticky=tk.EW, padx=5)
 
         row += 1
         # URL List
         ttk.Label(input_container, text="📋 URL List:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
-        self.url_list_entry = ttk.Entry(input_container, width=55)
+        self.url_list_entry = ttk.Entry(input_container, width=55, style='Placeholder.TEntry')
+        self.url_list_entry.placeholder = "Enter path to URL list file"
+        self.url_list_entry.insert(0, self.url_list_entry.placeholder)
+        self.url_list_entry.bind('<FocusIn>', on_focus_in)
+        self.url_list_entry.bind('<FocusOut>', on_focus_out)
         self.url_list_entry.grid(row=row, column=1, sticky=tk.EW, padx=5)
         ttk.Button(input_container, text="Browse", style='Accent.TButton', command=self._browse_urllist).grid(row=row, column=2, padx=5)
 
         row += 1
-        # Payload List
-        ttk.Label(input_container, text="🎯 Payload List:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
-        self.payload_entry = ttk.Entry(input_container, width=55)
-        self.payload_entry.grid(row=row, column=1, sticky=tk.EW, padx=5)
-        ttk.Button(input_container, text="Browse", style='Accent.TButton', command=self._browse_payload).grid(row=row, column=2, padx=5)
-
-        row += 1
         # Proxy
         ttk.Label(input_container, text="🔒 Proxy:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
-        self.proxy_entry = ttk.Entry(input_container, width=70)
+        self.proxy_entry = ttk.Entry(input_container, width=70, style='Placeholder.TEntry')
+        self.proxy_entry.placeholder = "Enter proxy (e.g., http://127.0.0.1:8080)"
+        self.proxy_entry.insert(0, self.proxy_entry.placeholder)
+        self.proxy_entry.bind('<FocusIn>', on_focus_in)
+        self.proxy_entry.bind('<FocusOut>', on_focus_out)
         self.proxy_entry.grid(row=row, column=1, columnspan=1, sticky=tk.EW, padx=5)
 
         row += 1
         # Threads
         ttk.Label(input_container, text="⚡ Threads:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.threads_entry = ttk.Entry(input_container, width=10)
-        self.threads_entry.insert(0, "10")
+        self.threads_entry.insert(0, "20")
         self.threads_entry.grid(row=row, column=1, sticky=tk.W, padx=5)
 
         row += 1
@@ -114,6 +149,15 @@ class SSTIScannerWindow(tk.Toplevel):
                                       style='TButton',
                                       command=self._on_back)
         self.back_button.pack(side=tk.LEFT, padx=10)
+        
+        # Add Stop Scan button
+        self.stop_button = ttk.Button(btn_frame,
+                                    text="Stop Scan ⏹",
+                                    style='TButton',
+                                    command=self._stop_scan,
+                                    state='disabled')
+        self.stop_button.pack(side=tk.RIGHT, padx=10)
+        
         self.scan_button = ttk.Button(btn_frame, 
                                        text="Start Scan ▶", 
                                        style='Accent.TButton',
@@ -123,6 +167,16 @@ class SSTIScannerWindow(tk.Toplevel):
         # Add Scan Results tab second
         result_frame = ttk.Frame(notebook)
         notebook.add(result_frame, text="Scan Results")
+        
+        # Add Save Output button
+        save_btn_frame = ttk.Frame(result_frame)
+        save_btn_frame.pack(fill=tk.X, pady=5)
+        self.save_button = ttk.Button(save_btn_frame,
+                                    text="Save Output 💾",
+                                    style='Accent.TButton',
+                                    command=self._save_output)
+        self.save_button.pack(side=tk.RIGHT, padx=10)
+        
         self.result_text = scrolledtext.ScrolledText(result_frame, 
                                                      bg='#2D2D44',
                                                      fg='#E0E0E0',
@@ -177,35 +231,71 @@ class SSTIScannerWindow(tk.Toplevel):
             self.url_list_entry.delete(0, tk.END)
             self.url_list_entry.insert(0, path)
 
-    def _browse_payload(self):
-        path = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
-        if path:
-            self.payload_entry.delete(0, tk.END)
-            self.payload_entry.insert(0, path)
-
     def _on_back(self):
         self.parent._on_child_close(self)
 
     def _start_scan(self):
+        # Get values and remove placeholders
         url = self.url_entry.get().strip()
+        if url == self.url_entry.placeholder:
+            url = ""
+
         url_list = self.url_list_entry.get().strip()
-        threads = int(self.threads_entry.get()) if self.threads_entry.get().isdigit() else 10
-        proxy = self.proxy_entry.get().strip() or None
-        payload_list = self.payload_entry.get().strip() or None
+        if url_list == self.url_list_entry.placeholder:
+            url_list = ""
+
+        proxy = self.proxy_entry.get().strip()
+        if proxy == self.proxy_entry.placeholder:
+            proxy = ""
+
+        threads = int(self.threads_entry.get()) if self.threads_entry.get().isdigit() else 20
         output_format = self.output_var.get()
+
+        # Convert empty strings to None
+        url_list = url_list or None
+        proxy = proxy or None
 
         if not url and not url_list:
             messagebox.showerror("Input Error", "Target URL or URL-List file is required.")
             return
 
-        self.scan_button.config(state='disabled')
-        self._append_text("Starting SSTI scan...\n")
-        threading.Thread(target=self._run_scan, args=(url, url_list, threads, proxy, payload_list, output_format), daemon=True).start()
+        # Validate URL list file if provided
+        if url_list and not os.path.isfile(url_list):
+            messagebox.showerror("Input Error", f"URL list file not found: {url_list}")
+            return
 
-    def _run_scan(self, url, url_list, threads, proxy, payload_list, output_format):
+        self.scan_button.config(state='disabled')
+        self.stop_button.config(state='normal')
+        self._append_text("Starting SSTI scan...\n")
+        threading.Thread(target=self._run_scan, args=(url, url_list, threads, proxy, output_format), daemon=True).start()
+
+    def _stop_scan(self):
+        if hasattr(self, 'scanner'):
+            self.scanner.stop_scan = True
+            self._append_text("\nStopping scan...\n")
+            self.stop_button.config(state='disabled')
+            self.scan_button.config(state='normal')
+            self.is_scanning = False
+
+    def _save_output(self):
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if file_path:
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(self.result_text.get('1.0', tk.END))
+                messagebox.showinfo("Success", "Output saved successfully!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save output: {str(e)}")
+
+    def _run_scan(self, url, url_list, threads, proxy, output_format):
         """Run the SSTI scan"""
         try:
+            # Initialize scanner with proper parameters
             self.scanner = SSTIScanner()
+            self.scanner.stop_scan = False  # Initialize stop_scan flag
             self.is_scanning = True
             self.target_url = url  # Store the target URL
             
@@ -214,9 +304,13 @@ class SSTIScannerWindow(tk.Toplevel):
                 url=url,
                 url_list=url_list,
                 threads=threads,
-                proxy=proxy,
-                payload_list=payload_list
+                proxy=proxy
             )
+            
+            # Check if scan was stopped
+            if self.scanner.stop_scan:
+                self._append_text("Scan stopped by user.\n")
+                return
             
             # Display results
             self._display_results(results, output_format)
@@ -251,36 +345,46 @@ class SSTIScannerWindow(tk.Toplevel):
         finally:
             self.is_scanning = False
             self.scan_button.config(state='normal')
+            self.stop_button.config(state='disabled')
 
     def _display_results(self, results, output_format):
+        """Display scan results in the specified format"""
+        if not results:
+            self._append_text("No vulnerabilities found.\n")
+            return
+            
         self._append_text(f"Scan complete. Found {len(results)} issues.\n")
-        if output_format == 'json':
-            for item in results:
-                self._append_text(json.dumps(item, indent=2) + "\n")
-        elif output_format == 'xml':
-            import xml.etree.ElementTree as ET
-            root = ET.Element('results')
-            for item in results:
-                entry = ET.SubElement(root, 'entry')
-                for k, v in item.items():
-                    child = ET.SubElement(entry, k)
-                    child.text = str(v)
-            xml_str = ET.tostring(root, encoding='utf-8').decode('utf-8')
-            self._append_text(xml_str + "\n")
-        else:  # csv
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(['URL', 'Payload', 'Parameter', 'Status', 'Length', 'Timestamp'])
-            for item in results:
-                writer.writerow([
-                    item.get('URL', ''),
-                    item.get('Payload', ''),
-                    item.get('Parameter', ''),
-                    item.get('Status', ''),
-                    item.get('length', ''),
-                    item.get('timestamp', '')
-                ])
-            self._append_text(output.getvalue() + "\n")
+        
+        try:
+            if output_format == 'json':
+                for item in results:
+                    self._append_text(json.dumps(item, indent=2) + "\n")
+            elif output_format == 'xml':
+                import xml.etree.ElementTree as ET
+                root = ET.Element('results')
+                for item in results:
+                    entry = ET.SubElement(root, 'entry')
+                    for k, v in item.items():
+                        child = ET.SubElement(entry, k)
+                        child.text = str(v)
+                xml_str = ET.tostring(root, encoding='utf-8').decode('utf-8')
+                self._append_text(xml_str + "\n")
+            else:  # csv
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerow(['URL', 'Payload', 'Parameter', 'Status', 'Length', 'Timestamp'])
+                for item in results:
+                    writer.writerow([
+                        item.get('URL', ''),
+                        item.get('Payload', ''),
+                        item.get('Parameter', ''),
+                        item.get('Status', ''),
+                        item.get('length', ''),
+                        item.get('timestamp', '')
+                    ])
+                self._append_text(output.getvalue() + "\n")
+        except Exception as e:
+            self._append_text(f"Error displaying results: {str(e)}\n")
 
     def _append_text(self, text):
         self.result_text.config(state='normal')

@@ -431,6 +431,7 @@ class SSTIScanner:
         self.session.trust_env = False  # Critical fix: Disable env proxies
         self.reflection_test_value = "TINJ_REFL_7BxY9z"  # More unique value
         self.verification_value = "TINJ_VERIF_4QwP2m"    # Different verification string
+        self.stop_scan = False  # Add stop_scan flag
 
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TINJ-Scanner/2.0"
@@ -526,6 +527,9 @@ class SSTIScanner:
             
         results = []
         for target_url in urls:
+            if self.stop_scan:  # Check if scan should be stopped
+                break
+
             self.attack_flow['phases'].append(f'Scanning {target_url}')
             self.attack_flow['current_phase'] = f'Scanning {target_url}'
             
@@ -533,6 +537,9 @@ class SSTIScanner:
             crawler = SiteCrawler(self.session, self.crawl_depth)
             parameters = crawler.crawl(target_url)
             
+            if self.stop_scan:  # Check if scan should be stopped
+                break
+
             self.attack_flow['steps'].append({
                 'phase': f'Scanning {target_url}',
                 'type': 'Crawling',
@@ -542,6 +549,9 @@ class SSTIScanner:
             # Test parameters
             reflected_params = self.find_reflected_parameters(target_url, parameters)
             
+            if self.stop_scan:  # Check if scan should be stopped
+                break
+
             self.attack_flow['steps'].append({
                 'phase': f'Scanning {target_url}',
                 'type': 'Reflection Testing',
@@ -550,6 +560,9 @@ class SSTIScanner:
             
             # Test for vulnerabilities
             for param in reflected_params:
+                if self.stop_scan:  # Check if scan should be stopped
+                    break
+
                 result = self.test_parameter(target_url, param)
                 if result:
                     results.append(result)

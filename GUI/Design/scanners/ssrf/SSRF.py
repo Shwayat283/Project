@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 import json
 import csv
 from datetime import datetime  
+import xml.etree.ElementTree as ET
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 results = []
@@ -186,42 +187,34 @@ def save_to_csv(data, filename):
         for entry in data:
             writer.writerow([entry["URL"], entry["Payload"], entry["Parameter"]])
 
-def save_to_xml(data, filename):
-    import xml.etree.ElementTree as ET
-    root = ET.Element('results')
-    for item in data:
-        entry = ET.SubElement(root, 'entry')
-        for k, v in item.items():
-            child = ET.SubElement(entry, k)
-            child.text = str(v)
-    tree = ET.ElementTree(root)
-    tree.write(filename, encoding='utf-8', xml_declaration=True)
-
-def display_xml(data):
-    import xml.etree.ElementTree as ET
-    root = ET.Element('results')
-    for item in data:
-        entry = ET.SubElement(root, 'entry')
-        for k, v in item.items():
-            child = ET.SubElement(entry, k)
-            child.text = str(v)
-    xml_str = ET.tostring(root, encoding='utf-8').decode('utf-8')
-    return xml_str
-
 def display_csv(data):
     print(f"{'URL':<40} | {'Payload':<30} | {'Parameter'}")
     print("-" * 100)
     for entry in data:
         print(f"{entry['URL']:<40} | {entry['Payload']:<30} | {entry['Parameter']}")
 
+def display_xml(data):
+    root = ET.Element('results')
+    for item in data:
+        entry = ET.SubElement(root, 'entry')
+        for k, v in item.items():
+            child = ET.SubElement(entry, k)
+            child.text = str(v)
+    return ET.tostring(root, encoding='utf-8').decode('utf-8')
+
 def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
     global results
+    if args.stop_scan:
+        return
+        
     main_page_content = fetch_content(base_url, proxies=proxies)
     raw_links = set(re.findall(r'href=["\'](.*?)["\']', main_page_content))
     absolute_links = {urljoin(base_url, link) for link in raw_links}
     actions_list, value_fields_list, name_fields_list = [], [], []
 
     for link in absolute_links:
+        if args.stop_scan:
+            return
         page_content = fetch_content(link, proxies=proxies)
         for func in (extract_actions, extract_values, extract_names):
             for item in func(page_content):
@@ -235,33 +228,44 @@ def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
     result_links = filter_similar_urls(absolute_links)
     url_value = []
     for v in value_fields_list:
+        if args.stop_scan:
+            return
         base_v = extract_base_url(v)
         if base_v not in url_value:
             url_value.append(base_v)
 
     target_urls = [f"{base_url}{action}" for action in actions_list]
-
-
     ip_ports = [i.split("://")[-1] for i in url_value]
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 50) as executor:
         for ip in ip_ports:
+            if args.stop_scan:
+                return
             if is_valid_ip_with_port(ip):
-                print(ip)
                 for i in range(1, 256):
+                    if args.stop_scan:
+                        return
                     for target in target_urls:
                         for payload in path_payloads:
                             for name in name_fields_list:
+                                if args.stop_scan:
+                                    return
                                 executor.submit(process_payload, ip, i, target, payload, name, proxies)
 
     tasks = [(target, payload, name) for target in target_urls for payload in ssrf_payloads for name in name_fields_list]
     with requests.Session() as session:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 20) as executor:
-            futures = [executor.submit(ssrf_post, url, payload, name, session, False, proxies) for url, payload, name in tasks]
+            futures = []
+            for task in tasks:
+                if args.stop_scan:
+                    return
+                futures.append(executor.submit(ssrf_post, task[0], task[1], task[2], session, False, proxies))
             concurrent.futures.wait(futures)
 
     tar = []
     for k in result_links:
+        if args.stop_scan:
+            return
         p = extract_links(k, proxies=proxies)
         p_cleaned = [url.replace(base_url, "") for url in p]
         tar.extend(p_cleaned)
@@ -269,22 +273,31 @@ def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 50) as executor:
         futures = []
         for target_url in target_urls:
-            
+            if args.stop_scan:
+                return
             for payload in ssrf_payloads:
                 for u in tar:
+                    if args.stop_scan:
+                        return
                     combined = u + payload
                     encoded_text = url_encode(combined)
                     for n in name_fields_list:
                         futures.append(executor.submit(path_payload, target_url, encoded_text, n, payload, proxies))
         concurrent.futures.wait(futures)
 
-    if args.collaborator:
+    if args.collaborator and not args.stop_scan:
         collab_domain = args.collaborator.strip()
         for link in result_links:
+            if args.stop_scan:
+                return
             send_with_referer(link, "http://" + collab_domain, proxies)
         if args.bruteforceattack.strip().lower() == "yes":
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 20) as executor:
-                futures = [executor.submit(collaborator, link, collab_domain, proxies) for link in result_links]
+                futures = []
+                for link in result_links:
+                    if args.stop_scan:
+                        return
+                    futures.append(executor.submit(collaborator, link, collab_domain, proxies))
                 concurrent.futures.wait(futures)
 
     if args.output:
@@ -296,7 +309,6 @@ def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
             save_to_csv(results, "results.csv")
         elif args.output == "xml":
             display_xml(results)
-            save_to_xml(results, "results.xml")
     else:
         for res in results:
             print(res)
@@ -319,26 +331,32 @@ class SSRFScanner:
                 "https": f"http://{proxy}"
             }
         self.results = []
+        self.stop_scan = False
 
     def scan(self):
         global results
         results = []
+        self.stop_scan = False
         ssrf_payloads = load_payloads(self.payload_list)
         path_payloads = load_payloads(self.path_payload_list)
+        
         if self.url:
             base_url = self.url.strip()
             if base_url.endswith('/'):
                 base_url = base_url[:-1]
-            process_single_url(base_url, ssrf_payloads, path_payloads, self, self.proxies)
+            if not self.stop_scan:
+                process_single_url(base_url, ssrf_payloads, path_payloads, self, self.proxies)
         elif self.url_list:
             with open(self.url_list, 'r') as f:
                 urls = [line.strip() for line in f if line.strip()]
                 for url in urls:
+                    if self.stop_scan:
+                        break
                     if url.endswith('/'):
                         url = url[:-1]
                     try:
                         process_single_url(url, ssrf_payloads, path_payloads, self, self.proxies)
                     except Exception as e:
-                        pass  # يمكن إرجاع الأخطاء لاحقًا إذا رغبت
+                        pass
         self.results = results.copy()
         return self.results

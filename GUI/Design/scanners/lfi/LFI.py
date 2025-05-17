@@ -16,7 +16,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 
 # Disable SSL/TLS warnings for easier debugging
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -51,6 +51,7 @@ class LFIScanner:
         ]
         self.exploit_enabled = exploit_enabled
         self.selected_categories = selected_categories or []
+        self.stop_scan = False  # Add stop_scan flag
 
         if wordlist:
             self._load_wordlist(wordlist)
@@ -619,7 +620,7 @@ class LFIScanner:
         - Uses BFS algorithm with limited depth
         - Handles relative/absolute URL conversion
         - Respects same-domain restriction"""
-        if url in self.visited_urls:
+        if url in self.visited_urls or self.stop_scan:  # Check stop_scan flag
             return
         self.visited_urls.add(url)
 
@@ -634,16 +635,21 @@ class LFIScanner:
             
             # Process each discovered element
             for element in elements:
+                if self.stop_scan:  # Check stop_scan flag
+                    break
                 new_url = self._extract_url(element, url)
                 if new_url and new_url not in self.visited_urls:
                     # Submit URL processing to thread pool
                     futures.append(self.executor.submit(self._process_url, new_url))
 
             # Immediate parameter analysis for current page
-            self._analyze_parameters(url)
+            if not self.stop_scan:  # Check stop_scan flag
+                self._analyze_parameters(url)
             
             # Process child URLs as they complete
             for future in as_completed(futures):
+                if self.stop_scan:  # Check stop_scan flag
+                    break
                 future.result()
 
         except Exception as e:
@@ -695,12 +701,19 @@ class LFIScanner:
         3. Threaded execution of vulnerability checks
         - Prevents duplicate tests using combination tracking
         - Handles multiple parameters per URL"""
+        if self.stop_scan:  # Check stop_scan flag
+            return
+            
         parsed = urlparse(url)
         params = parse_qs(parsed.query)
         
         for param in params:
+            if self.stop_scan:  # Check stop_scan flag
+                break
             futures = []
             for payload in self.payloads:
+                if self.stop_scan:  # Check stop_scan flag
+                    break
                 # Unique test identifier
                 combination = (parsed.path, param, payload)
                 if combination not in self.tested_combinations:
@@ -712,6 +725,8 @@ class LFIScanner:
             
             # Collect results as they complete
             for future in as_completed(futures):
+                if self.stop_scan:  # Check stop_scan flag
+                    break
                 if result := future.result():
                     self.vulnerabilities.append(result)
 
@@ -898,6 +913,7 @@ class LFIScanner:
         self.base_domain = None
         self.tested_payloads = set()
         self.unified_report = []
+        self.stop_scan = False  # Reset stop_scan flag
 def main():
     """Command-line interface and main execution flow
     1. Parse command-line arguments
@@ -1000,10 +1016,6 @@ def validate_xml(filename):
     except Exception as e:
         print(f"[!] XML validation error: {str(e)}")
 
-# Add to generate_report after file creation
-if format == 'xml':
-    validate_xml(filename)
-    
 def generate_report(data, format):
     """Generate report file with proper content handling"""
     try:
@@ -1061,6 +1073,7 @@ def generate_report(data, format):
             # Write the XML tree to file
             tree = ET.ElementTree(root)
             tree.write(filename, encoding='utf-8', xml_declaration=True, method='xml')
+            validate_xml(filename)  # Validate after file creation
         elif format == 'json':
             filename = "report.json"  
             with open(filename, 'w') as f:
