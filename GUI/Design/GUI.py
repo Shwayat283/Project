@@ -395,7 +395,7 @@ class AboutWindow(tk.Toplevel):
         version_info = [
             "• Version: 1.0",
             "• Release Date: 2025",
-            "• Platform: Windows/linux",
+            "• Platform: Windows/linux/macOS",
             "• Requirements: Python 3.8+",
             "• License: Educational Use"
         ]

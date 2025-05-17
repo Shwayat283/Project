@@ -177,6 +177,13 @@ class SSTIScannerWindow(tk.Toplevel):
                                     command=self._save_output)
         self.save_button.pack(side=tk.RIGHT, padx=10)
         
+        # Add Clear Results button
+        self.clear_button = ttk.Button(save_btn_frame,
+                                    text="Clear Results 🗑",
+                                    style='Accent.TButton',
+                                    command=self._clear_results)
+        self.clear_button.pack(side=tk.RIGHT, padx=10)
+        
         self.result_text = scrolledtext.ScrolledText(result_frame, 
                                                      bg='#2D2D44',
                                                      fg='#E0E0E0',
@@ -289,6 +296,12 @@ class SSTIScannerWindow(tk.Toplevel):
                 messagebox.showinfo("Success", "Output saved successfully!")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save output: {str(e)}")
+
+    def _clear_results(self):
+        """Clear the results text area"""
+        self.result_text.config(state='normal')
+        self.result_text.delete('1.0', tk.END)
+        self.result_text.config(state='disabled')
 
     def _run_scan(self, url, url_list, threads, proxy, output_format):
         """Run the SSTI scan"""
