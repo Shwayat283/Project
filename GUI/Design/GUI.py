@@ -15,7 +15,7 @@ from SSTIScannerWindow import SSTIScannerWindow
 class ScannerApp(tk.Tk):
     def __init__(self): 
         super().__init__()
-        self.title("Vulnerability Scanner")
+        self.title("RocScanner")
         self.state('zoomed')  # Start maximized
         self.current_bg = "#1E1E2E"  # Dark theme background
         self.configure(bg=self.current_bg)
@@ -134,7 +134,7 @@ class ScannerApp(tk.Tk):
         frame = ttk.Frame(self.main_frame)
         frame.pack(expand=True, fill=tk.BOTH, padx=50, pady=50)
         title = ttk.Label(frame, 
-                          text="Vulnerability Scanner", 
+                          text="RocScanner", 
                           font=("Segoe UI", 40, "bold"),
                           foreground="#38bdf8")
         title.pack(pady=(0, 0))
@@ -274,7 +274,7 @@ class AboutWindow(tk.Toplevel):
     def _create_widgets(self):
         # Title
         title = ttk.Label(self.container, 
-                          text="Vulnerability Scanner v1.0", 
+                          text="RocScanner v1.0", 
                           font=("Segoe UI", 24, "bold"),
                           foreground="#89B4FA",
                           background=self.parent.current_bg)
