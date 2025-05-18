@@ -12,6 +12,8 @@ from playwright.sync_api import sync_playwright
 import html
 import xml.etree.ElementTree as ET
 from datetime import datetime
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class XSSHunter:
     def __init__(self, target_url, output_formats=None, output_file="xss_report", proxy_url=None):
@@ -31,7 +33,9 @@ class XSSHunter:
                 'https': self.proxy_url
             }
             self.session.verify = False  # Disable SSL verification for Burp
-            
+        if proxy_url and not proxy_url.startswith(('http://', 'https://')):
+            proxy_url = f"http://{proxy_url}"  # Default to HTTP
+    
         # Configuration
         self.max_workers = 3
         self.scan_depth = 2
@@ -163,6 +167,8 @@ class XSSHunter:
             print(f"[-] Param test error: {str(e)}")
 
     def detect_vulnerabilities(self, response, payload, context, source):
+        soup = BeautifulSoup(response.text, 'html.parser')
+
         if payload in response.text:
             self.report_vulnerability('Reflected', payload, source)
         
@@ -190,6 +196,7 @@ class XSSHunter:
             return False
 
     def run_dom_test(self, payload, test_type, sink=None):
+        
         try:
             proxy_args = {}
             if self.proxy_url:
