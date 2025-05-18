@@ -100,7 +100,7 @@ class SSTIScannerWindow(tk.Toplevel):
         # Target URL
         ttk.Label(input_container, text="🌐 Target URL:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.url_entry = ttk.Entry(input_container, width=70, style='Placeholder.TEntry')
-        self.url_entry.placeholder = "Enter target URL (e.g., http://example.com/page?name=)"
+        self.url_entry.placeholder = "Enter target URL (e.g., http://example.com/page?name=) (required)"
         self.url_entry.insert(0, self.url_entry.placeholder)
         self.url_entry.bind('<FocusIn>', on_focus_in)
         self.url_entry.bind('<FocusOut>', on_focus_out)
