@@ -71,7 +71,35 @@ def fetch_content(url, timeout=5.0, proxies=None):
 
 def extract_actions(content): return re.findall(r'action=["\'](.*?)["\']', content, re.IGNORECASE)
 def extract_values(content): return re.findall(r'value=["\'](.*?)["\']', content, re.IGNORECASE)
-def extract_names(content): return re.findall(r'name=["\'](.*?)["\']', content, re.IGNORECASE)
+
+def is_url_like(value):
+    """Check if value contains URL-like patterns"""
+    url_pattern = r"""(?i)\b((?:https?://|ftp://|file://|www\.|localhost|\.\./|
+                    \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?|
+                    [a-z0-9-]+\.(?:[a-z]{2,}))(?:/[^\s]*)?)"""
+    return re.search(url_pattern, str(value), re.IGNORECASE | re.VERBOSE) if value else False
+
+def extract_parameters_with_url_values(content):
+    """Extract parameters that have URL-like values"""
+    soup = BeautifulSoup(content, 'html.parser')
+    params = set()
+    
+    # Check all relevant elements
+    for element in soup.find_all(['input', 'select', 'textarea', 'meta']):
+        name = element.get('name')
+        value = element.get('value', '')
+        
+        # Special handling for select elements
+        if element.name == 'select':
+            for option in element.find_all('option'):
+                if is_url_like(option.get('value', '')):
+                    params.add(name)
+                    break
+        elif name and is_url_like(value):
+            params.add(name)
+    
+    return list(params)
+
 
 def extract_base_url(full_url):
     parsed = urlparse(full_url)
@@ -216,14 +244,18 @@ def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
         if args.stop_scan:
             return
         page_content = fetch_content(link, proxies=proxies)
-        for func in (extract_actions, extract_values, extract_names):
-            for item in func(page_content):
-                if func == extract_actions and item not in actions_list:
-                    actions_list.append(item)
-                elif func == extract_values and item not in value_fields_list:
-                    value_fields_list.append(item)
-                elif func == extract_names and item not in name_fields_list:
-                    name_fields_list.append(item)
+        for item in extract_actions(page_content):
+            if item not in actions_list:
+                actions_list.append(item)
+
+        for item in extract_values(page_content):
+            if item not in value_fields_list:
+                value_fields_list.append(item)
+
+        # Process parameters with URL values
+        for param in extract_parameters_with_url_values(page_content):
+            if param not in name_fields_list:
+                name_fields_list.append(param)
 
     result_links = filter_similar_urls(absolute_links)
     url_value = []
