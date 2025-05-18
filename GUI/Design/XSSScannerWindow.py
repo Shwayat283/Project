@@ -5,6 +5,7 @@ import csv
 import io
 import threading
 from scanners.xss.XSS import XSSHunter
+import xml.etree.ElementTree as ET
 
 class XSSScannerWindow(tk.Toplevel):
     def __init__(self, parent):
@@ -245,6 +246,26 @@ class XSSScannerWindow(tk.Toplevel):
         self.result_text.delete('1.0', tk.END)
         self.result_text.config(state='disabled')
 
+    def _format_results(self, vulnerabilities, format_type):
+        if format_type == 'json':
+            return json.dumps(vulnerabilities, indent=4)
+        elif format_type == 'csv':
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=['type', 'payload', 'location', 'timestamp'])
+            writer.writeheader()
+            writer.writerows(vulnerabilities)
+            return output.getvalue()
+        elif format_type == 'xml':
+            root = ET.Element('vulnerabilities')
+            for vuln in vulnerabilities:
+                vuln_elem = ET.SubElement(root, 'vulnerability')
+                ET.SubElement(vuln_elem, 'type').text = vuln['type']
+                ET.SubElement(vuln_elem, 'payload').text = vuln['payload']
+                ET.SubElement(vuln_elem, 'location').text = vuln['location']
+                ET.SubElement(vuln_elem, 'timestamp').text = vuln['timestamp']
+            return ET.tostring(root, encoding='unicode', method='xml')
+        return str(vulnerabilities)
+
     def _run_scan(self, params):
         try:
             self.scanner = XSSHunter(
@@ -255,24 +276,18 @@ class XSSScannerWindow(tk.Toplevel):
             )
             self.scanner.max_workers = params['workers']
             
-            # Override the print function to capture output
-            def custom_print(*args, **kwargs):
-                text = ' '.join(str(arg) for arg in args)
-                self._append_text(text + '\n')
-            
-            # Store original print function
-            original_print = print
-            # Replace print with custom function
-            import builtins
-            builtins.print = custom_print
-            
             try:
                 self.scanner.start_scan()
-            finally:
-                # Restore original print function
-                builtins.print = original_print
-            
-            self._append_text("\nScan complete!\n")
+                # Format and display results
+                if self.scanner.vulnerabilities:
+                    formatted_results = self._format_results(
+                        self.scanner.vulnerabilities, 
+                        params['output_formats'][0]
+                    )
+                    self._append_text("\nScan Results:\n")
+                    self._append_text(formatted_results + "\n")
+            except Exception as e:
+                self._append_text(f"Error: {e}\n")
             
         except Exception as e:
             self._append_text(f"Error: {e}\n")

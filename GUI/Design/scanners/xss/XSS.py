@@ -54,6 +54,18 @@ class XSSHunter:
                 '<script>alert(1)</script>',
                 '<img src=x onerror=alert(1)>'
             ],
+            'stored': [
+                '<script>alert(1)</script>',
+                '<img src=x onerror=alert(1)>',
+                '<svg onload=alert(1)>',
+                '<body onload=alert(1)>',
+                '<input onfocus=alert(1) autofocus>',
+                '<details open ontoggle=alert(1)>',
+                '"><script>alert(1)</script>',
+                "'><script>alert(1)</script>",
+                '"><img src=x onerror=alert(1)>',
+                "'><img src=x onerror=alert(1)>"
+            ],
             'dom': [
                 '#<img src=x onerror=print()>',
                 '#javascript:print()'
@@ -86,10 +98,17 @@ class XSSHunter:
             response = self.session.get(url, headers=headers, timeout=self.timeout)
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Process forms
+            # Process forms with higher priority for comment forms
+            forms = soup.find_all('form')
+            comment_forms = [f for f in forms if any(word in str(f).lower() for word in ['comment', 'post', 'submit'])]
+            other_forms = [f for f in forms if f not in comment_forms]
+            
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 if not self.stop_scan:
-                    list(executor.map(lambda form: self.test_form(form, url), soup.find_all('form')))
+                    # Test comment forms first
+                    list(executor.map(lambda form: self.test_form(form, url), comment_forms))
+                    # Then test other forms
+                    list(executor.map(lambda form: self.test_form(form, url), other_forms))
             
             # Process links
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -126,9 +145,75 @@ class XSSHunter:
             }
             form_details['inputs'].append(input_details)
         
+        # Test for stored XSS
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            list(executor.map(lambda p: self.test_stored_xss(form_details, p), 
+                            self.get_xss_payloads('stored')))
+        
+        # Test for reflected XSS
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             list(executor.map(lambda p: self.test_form_payload(form_details, p), 
-                            self.get_xss_payloads()))
+                            self.get_xss_payloads('reflected')))
+
+    def test_stored_xss(self, form_details, payload):
+        data = {}
+        for input_field in form_details['inputs']:
+            if input_field['type'] == 'hidden':
+                data[input_field['name']] = input_field['value']
+            else:
+                # For comment forms, we need to fill all required fields
+                if 'comment' in input_field['name'].lower():
+                    data[input_field['name']] = payload
+                elif 'name' in input_field['name'].lower():
+                    data[input_field['name']] = 'Test User'
+                elif 'email' in input_field['name'].lower():
+                    data[input_field['name']] = 'test@example.com'
+                elif 'website' in input_field['name'].lower():
+                    data[input_field['name']] = 'http://example.com'
+                else:
+                    data[input_field['name']] = payload
+        
+        try:
+            time.sleep(self.rate_limit)
+            if form_details['method'] == 'post':
+                response = self.session.post(form_details['action'], data=data)
+            else:
+                response = self.session.get(form_details['action'], params=data)
+            
+            # Check if the form submission was successful
+            if response.status_code == 200 or response.status_code == 302:
+                # Try to access the page where the comment would be displayed
+                page_url = form_details['action']
+                if '?' in page_url:
+                    page_url = page_url.split('?')[0]
+                
+                # Wait a bit for the comment to be processed
+                time.sleep(2)
+                
+                # Check the page for the stored payload
+                page_response = self.session.get(page_url)
+                
+                # Enhanced payload detection
+                if payload in page_response.text:
+                    self.report_vulnerability('Stored XSS', payload, page_url)
+                    print(f"[+] Found stored XSS vulnerability with payload: {payload}")
+                    print(f"[+] Location: {page_url}")
+                
+                # Check for common success messages
+                if any(msg in page_response.text.lower() for msg in ['thank you', 'comment posted', 'success', 'comment has been submitted']):
+                    self.report_vulnerability('Potential Stored XSS', payload, page_url)
+                    print(f"[+] Potential stored XSS found with payload: {payload}")
+                    print(f"[+] Location: {page_url}")
+                
+                # Additional check for script tags
+                if '<script>' in payload and '</script>' in payload:
+                    if payload in page_response.text:
+                        self.report_vulnerability('Confirmed Stored XSS (Script Tag)', payload, page_url)
+                        print(f"[+] Confirmed stored XSS with script tag: {payload}")
+                        print(f"[+] Location: {page_url}")
+                    
+        except Exception as e:
+            print(f"[-] Stored XSS test error: {str(e)}")
 
     def test_form_payload(self, form_details, payload):
         data = {}
@@ -177,8 +262,12 @@ class XSSHunter:
         if any(trigger in response.text.lower() for trigger in ['onmouseover=', 'onload=', 'onfocus=']):
             self.report_vulnerability('Potential Attribute XSS', payload, source)
         
-        if context == 'form' and 'thank you' in response.text.lower():
-            self.report_vulnerability('Potential Stored', payload, source)
+        # Enhanced stored XSS detection
+        if context == 'form':
+            if any(msg in response.text.lower() for msg in ['thank you', 'comment posted', 'success']):
+                self.report_vulnerability('Potential Stored XSS', payload, source)
+            if '<script>' in payload and '</script>' in payload and payload in response.text:
+                self.report_vulnerability('Potential Stored XSS (Script Tag)', payload, source)
 
     def check_for_xss(self, page):
         try:
@@ -205,52 +294,55 @@ class XSSHunter:
                 }
 
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(
-                    headless=True,
-                    **proxy_args
-                )
-                context = browser.new_context(ignore_https_errors=True)
-                page = context.new_page()
-                
-                if test_type == 'hashchange':
-                    page.goto(self.target_url)
-                    page.evaluate(f"""() => {{
-                        const iframe = document.createElement('iframe');
-                        iframe.src = '{self.target_url}#';
-                        iframe.onload = function() {{
-                            this.src += {json.dumps(payload)};
-                        }};
-                        document.body.appendChild(iframe);
-                    }}""")
-                    time.sleep(2)
-                elif sink:
-                    page.goto(self.target_url)
-                    escaped_payload = json.dumps(payload)
-                    page.evaluate(f"""
-                        try {{
-                            {sink}({escaped_payload});
-                        }} catch(e) {{
-                            console.log('Sink error:', e);
-                        }}
-                    """)
-                else:
-                    page.goto(f"{self.target_url}#{payload}")
-                
-                if self.check_for_xss(page):
-                    vuln_type = 'DOM XSS' + (f' ({sink})' if sink else '')
-                    self.report_vulnerability(vuln_type, payload, page.url)
-                
-                page.close()
-                context.close()
-                browser.close()
+                try:
+                    browser = playwright.chromium.launch(
+                        headless=True,
+                        **proxy_args
+                    )
+                    context = browser.new_context(ignore_https_errors=True)
+                    page = context.new_page()
+                    
+                    if test_type == 'hashchange':
+                        page.goto(self.target_url)
+                        page.evaluate(f"""() => {{
+                            const iframe = document.createElement('iframe');
+                            iframe.src = '{self.target_url}#';
+                            iframe.onload = function() {{
+                                this.src += {json.dumps(payload)};
+                            }};
+                            document.body.appendChild(iframe);
+                        }}""")
+                        time.sleep(2)
+                    elif sink:
+                        page.goto(self.target_url)
+                        escaped_payload = json.dumps(payload)
+                        page.evaluate(f"""
+                            try {{
+                                {sink}({escaped_payload});
+                            }} catch(e) {{
+                                console.log('Sink error:', e);
+                            }}
+                        """)
+                    else:
+                        page.goto(f"{self.target_url}#{payload}")
+                    
+                    if self.check_for_xss(page):
+                        vuln_type = 'DOM XSS' + (f' ({sink})' if sink else '')
+                        self.report_vulnerability(vuln_type, payload, page.url)
+                    
+                    page.close()
+                    context.close()
+                    browser.close()
+                except Exception as e:
+                    # Silently handle Playwright errors
+                    pass
         except Exception as e:
-            print(f"DOM test failed: {str(e)}")
+            # Silently handle Playwright errors
+            pass
 
     def report_vulnerability(self, vuln_type, payload, location):
         timestamp = datetime.now().isoformat()
         with self.lock:
-            print(f"\033[91m[!] [{timestamp}] {vuln_type} found at {location}\033[0m")
-            print(f"    Payload: {payload}\n")
             self.vulnerabilities.append({
                 'type': vuln_type,
                 'payload': payload,
@@ -299,7 +391,7 @@ class XSSHunter:
         print(f"[+] XML report saved to {filename}")
 
     def start_scan(self):
-        print(f"\033[94m[*] Starting scan on {self.target_url}\033[0m")
+        print("Starting scan...")
         self.stop_scan = False  # Reset stop_scan flag
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
@@ -307,9 +399,9 @@ class XSSHunter:
             executor.submit(self.run_dom_tests)
 
         if self.stop_scan:
-            print(f"\n\033[93m[!] Scan stopped by user.\033[0m")
+            print("Scan stopped by user.")
         else:
-            print(f"\n\033[92m[+] Scan complete. Found {len(self.vulnerabilities)} vulnerabilities.\033[0m")
+            print(f"Scan complete. Found {len(self.vulnerabilities)} vulnerabilities.")
         
         if self.output_formats and not self.stop_scan:
             self.export_reports()
