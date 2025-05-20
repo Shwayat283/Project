@@ -351,8 +351,8 @@ class SSRFScanner:
         self.url_list = url_list
         self.output = output
         self.threads = threads or 20
-        self.payload_list = payload_list or "payload.txt"
-        self.path_payload_list = path_payload_list or "pathpayload.txt"
+        self.payload_list = payload_list or "scanners/ssrf/payload.txt"
+        self.path_payload_list = path_payload_list or "scanners/ssrf/pathpayload.txt"
         self.collaborator = collaborator
         self.bruteforceattack = bruteforceattack
         self.proxy = proxy

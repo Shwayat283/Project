@@ -5,6 +5,7 @@ import csv
 import io
 import threading
 from scanners.ssrf.SSRF import SSRFScanner, display_xml
+import os
 
 class SSRFScannerWindow(tk.Toplevel):
     def __init__(self, parent):
@@ -271,9 +272,17 @@ class SSRFScannerWindow(tk.Toplevel):
 
         # Use default payload files if none provided
         if not payload_list:
-            payload_list = "Design/scanners/ssrf/payload.txt"
+            payload_list = "scanners/ssrf/payload.txt"
         if not path_payload_list:
-            path_payload_list = "Design/scanners/ssrf/pathpayload.txt"
+            path_payload_list = "scanners/ssrf/pathpayload.txt"
+
+        # Check if default files exist
+        if not os.path.exists(payload_list):
+            messagebox.showerror("Error", f"Default payload file not found: {payload_list}")
+            return
+        if not os.path.exists(path_payload_list):
+            messagebox.showerror("Error", f"Default path payload file not found: {path_payload_list}")
+            return
 
         self.scan_button.config(state='disabled')
         self.stop_button.config(state='normal')

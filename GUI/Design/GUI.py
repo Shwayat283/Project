@@ -5,8 +5,9 @@ from tkinter import ttk
 import json
 import csv
 import io
+from PIL import Image, ImageTk
 
-# Import scanner windows
+
 from LFIScannerWindow import LFIScannerWindow
 from XSSScannerWindow import XSSScannerWindow
 from SSRFScannerWindow import SSRFScannerWindow
@@ -56,6 +57,10 @@ class ScannerApp(tk.Tk):
         self._create_settings_button()
         
         self._create_main_menu()
+        
+        # Set window icon
+        icon = tk.PhotoImage(file="image.png")
+        self.iconphoto(False, icon)
     
     def _on_frame_configure(self, event=None):
         """Reset the scroll region to encompass the inner frame"""
@@ -133,13 +138,25 @@ class ScannerApp(tk.Tk):
     def _create_main_menu(self):
         frame = ttk.Frame(self.main_frame)
         frame.pack(expand=True, fill=tk.BOTH, padx=50, pady=50)
-        title = ttk.Label(frame, 
-                          text="RocScanner", 
-                          font=("Segoe UI", 40, "bold"),
-                          foreground="#38bdf8")
-        title.pack(pady=(0, 0))
+        # Load and trim the logo image to remove transparent/white borders, then resize
+        logo_img_raw = Image.open("image.png")
+        # Convert to RGBA if not already
+        if logo_img_raw.mode != 'RGBA':
+            logo_img_raw = logo_img_raw.convert('RGBA')
+        # Get bounding box of non-transparent area
+        bbox = logo_img_raw.getbbox()
+        if bbox:
+            logo_img_raw = logo_img_raw.crop(bbox)
+        logo_img = logo_img_raw.resize((100, 100), Image.LANCZOS)
+        self.logo_img = ImageTk.PhotoImage(logo_img)
+        tight_title_frame = ttk.Frame(frame, style='TFrame')
+        tight_title_frame.pack(pady=(0, 0))
+        logo_label = ttk.Label(tight_title_frame, image=self.logo_img, style='TLabel')
+        logo_label.pack(side=tk.LEFT, padx=(0, 0))
+        text_label = ttk.Label(tight_title_frame, text="RocScanner", font=("Segoe UI", 40, "bold"), foreground="#38bdf8", style='TLabel')
+        text_label.pack(side=tk.LEFT, padx=(0, 0))
         subtitle = ttk.Label(frame,
-                           text="Advanced Security Testing Platform",
+                           text="    Advanced Security Testing Platform",
                            font=("Segoe UI", 18),
                            foreground="#94a3b8")
         subtitle.pack(pady=(0, 30))
