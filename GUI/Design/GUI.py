@@ -17,7 +17,8 @@ class ScannerApp(tk.Tk):
     def __init__(self): 
         super().__init__()
         self.title("RocScanner")
-        self.state('zoomed')  # Start maximized
+        self.state('normal')  # Changed from 'zoomed' to 'normal'
+        self.geometry("{0}x{1}+0+0".format(self.winfo_screenwidth(), self.winfo_screenheight()))  # Maximize window
         self.current_bg = "#1E1E2E"  # Dark theme background
         self.configure(bg=self.current_bg)
         self.style = ttk.Style(self)
