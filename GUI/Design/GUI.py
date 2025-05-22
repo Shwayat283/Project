@@ -6,6 +6,8 @@ import json
 import csv
 import io
 from PIL import Image, ImageTk
+import sys
+import os
 
 
 from LFIScannerWindow import LFIScannerWindow
@@ -13,12 +15,22 @@ from XSSScannerWindow import XSSScannerWindow
 from SSRFScannerWindow import SSRFScannerWindow
 from SSTIScannerWindow import SSTIScannerWindow
 
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+
 class ScannerApp(tk.Tk):
     def __init__(self): 
         super().__init__()
         self.title("RocScanner")
-        self.state('normal')  # Changed from 'zoomed' to 'normal'
-        self.geometry("{0}x{1}+0+0".format(self.winfo_screenwidth(), self.winfo_screenheight()))  # Maximize window
+        self.state('zoomed')  # Start maximized
         self.current_bg = "#1E1E2E"  # Dark theme background
         self.configure(bg=self.current_bg)
         self.style = ttk.Style(self)
@@ -59,9 +71,12 @@ class ScannerApp(tk.Tk):
         
         self._create_main_menu()
         
-        # Set window icon
-        icon = tk.PhotoImage(file="image.png")
-        self.iconphoto(False, icon)
+        # Set window icon using resource_path
+        try:
+            icon = tk.PhotoImage(file=resource_path("image.png"))
+            self.iconphoto(False, icon)
+        except Exception as e:
+            print(f"Warning: Could not load icon: {e}")
     
     def _on_frame_configure(self, event=None):
         """Reset the scroll region to encompass the inner frame"""
@@ -140,20 +155,25 @@ class ScannerApp(tk.Tk):
         frame = ttk.Frame(self.main_frame)
         frame.pack(expand=True, fill=tk.BOTH, padx=50, pady=50)
         # Load and trim the logo image to remove transparent/white borders, then resize
-        logo_img_raw = Image.open("image.png")
-        # Convert to RGBA if not already
-        if logo_img_raw.mode != 'RGBA':
-            logo_img_raw = logo_img_raw.convert('RGBA')
-        # Get bounding box of non-transparent area
-        bbox = logo_img_raw.getbbox()
-        if bbox:
-            logo_img_raw = logo_img_raw.crop(bbox)
-        logo_img = logo_img_raw.resize((100, 100), Image.LANCZOS)
-        self.logo_img = ImageTk.PhotoImage(logo_img)
-        tight_title_frame = ttk.Frame(frame, style='TFrame')
-        tight_title_frame.pack(pady=(0, 0))
-        logo_label = ttk.Label(tight_title_frame, image=self.logo_img, style='TLabel')
-        logo_label.pack(side=tk.LEFT, padx=(0, 0))
+        try:
+            logo_img_raw = Image.open(resource_path("image.png"))
+            # Convert to RGBA if not already
+            if logo_img_raw.mode != 'RGBA':
+                logo_img_raw = logo_img_raw.convert('RGBA')
+            # Get bounding box of non-transparent area
+            bbox = logo_img_raw.getbbox()
+            if bbox:
+                logo_img_raw = logo_img_raw.crop(bbox)
+            logo_img = logo_img_raw.resize((100, 100), Image.LANCZOS)
+            self.logo_img = ImageTk.PhotoImage(logo_img)
+            tight_title_frame = ttk.Frame(frame, style='TFrame')
+            tight_title_frame.pack(pady=(0, 0))
+            logo_label = ttk.Label(tight_title_frame, image=self.logo_img, style='TLabel')
+            logo_label.pack(side=tk.LEFT, padx=(0, 0))
+        except Exception as e:
+            print(f"Warning: Could not load logo: {e}")
+            tight_title_frame = ttk.Frame(frame, style='TFrame')
+            tight_title_frame.pack(pady=(0, 0))
         text_label = ttk.Label(tight_title_frame, text="RocScanner", font=("Segoe UI", 40, "bold"), foreground="#38bdf8", style='TLabel')
         text_label.pack(side=tk.LEFT, padx=(0, 0))
         subtitle = ttk.Label(frame,
