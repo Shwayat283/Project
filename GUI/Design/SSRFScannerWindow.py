@@ -5,7 +5,6 @@ import csv
 import io
 import threading
 from scanners.ssrf.SSRF import SSRFScanner, display_xml
-import os
 
 class SSRFScannerWindow(tk.Toplevel):
     def __init__(self, parent):
@@ -93,7 +92,7 @@ class SSRFScannerWindow(tk.Toplevel):
         # Target URL
         ttk.Label(input_container, text="🌐 Target URL:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.url_entry = ttk.Entry(input_container, width=70, style='Placeholder.TEntry')
-        self.url_entry.placeholder = "Enter target URL (e.g., http://example.com/api?url=)(required)"
+        self.url_entry.placeholder = "Enter target URL (e.g., http://example.com/api?url=)"
         self.url_entry.insert(0, self.url_entry.placeholder)
         self.url_entry.bind('<FocusIn>', on_focus_in)
         self.url_entry.bind('<FocusOut>', on_focus_out)
@@ -268,20 +267,6 @@ class SSRFScannerWindow(tk.Toplevel):
 
         if not url and not url_list:
             messagebox.showerror("Input Error", "Target URL or URL-List file is required.")
-            return
-
-        # Use default payload files if none provided
-        if not payload_list:
-            payload_list = "scanners/ssrf/payload.txt"
-        if not path_payload_list:
-            path_payload_list = "scanners/ssrf/pathpayload.txt"
-
-        # Check if default files exist
-        if not os.path.exists(payload_list):
-            messagebox.showerror("Error", f"Default payload file not found: {payload_list}")
-            return
-        if not os.path.exists(path_payload_list):
-            messagebox.showerror("Error", f"Default path payload file not found: {path_payload_list}")
             return
 
         self.scan_button.config(state='disabled')

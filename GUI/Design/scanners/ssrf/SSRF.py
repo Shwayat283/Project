@@ -71,6 +71,9 @@ def fetch_content(url, timeout=5.0, proxies=None):
 
 def extract_actions(content): return re.findall(r'action=["\'](.*?)["\']', content, re.IGNORECASE)
 def extract_values(content): return re.findall(r'value=["\'](.*?)["\']', content, re.IGNORECASE)
+def extract_fields(pattern, content):
+    return re.findall(pattern, content, re.IGNORECASE) or []
+extract_names   = lambda content: extract_fields(r'name=["\'](.*?)["\']', content)
 
 def is_url_like(value):
     """Check if value contains URL-like patterns"""
@@ -239,6 +242,7 @@ def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
     raw_links = set(re.findall(r'href=["\'](.*?)["\']', main_page_content))
     absolute_links = {urljoin(base_url, link) for link in raw_links}
     actions_list, value_fields_list, name_fields_list = [], [], []
+    names=[]
 
     for link in absolute_links:
         if args.stop_scan:
@@ -256,7 +260,9 @@ def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
         for param in extract_parameters_with_url_values(page_content):
             if param not in name_fields_list:
                 name_fields_list.append(param)
-
+        for param in extract_names(page_content):
+            if param not in names:
+                names.append(param)
     result_links = filter_similar_urls(absolute_links)
     url_value = []
     for v in value_fields_list:
@@ -301,7 +307,6 @@ def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
         p = extract_links(k, proxies=proxies)
         p_cleaned = [url.replace(base_url, "") for url in p]
         tar.extend(p_cleaned)
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads or 50) as executor:
         futures = []
         for target_url in target_urls:
@@ -313,7 +318,7 @@ def process_single_url(base_url, ssrf_payloads, path_payloads, args, proxies):
                         return
                     combined = u + payload
                     encoded_text = url_encode(combined)
-                    for n in name_fields_list:
+                    for n in names:
                         futures.append(executor.submit(path_payload, target_url, encoded_text, n, payload, proxies))
         concurrent.futures.wait(futures)
 
