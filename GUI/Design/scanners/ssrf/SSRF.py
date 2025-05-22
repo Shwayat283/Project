@@ -9,6 +9,17 @@ import json
 import csv
 from datetime import datetime  
 import xml.etree.ElementTree as ET
+import os
+import sys
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 results = []
@@ -356,8 +367,8 @@ class SSRFScanner:
         self.url_list = url_list
         self.output = output
         self.threads = threads or 20
-        self.payload_list = payload_list or "scanners/ssrf/payload.txt"
-        self.path_payload_list = path_payload_list or "scanners/ssrf/pathpayload.txt"
+        self.payload_list = payload_list or resource_path("scanners/ssrf/payload.txt")
+        self.path_payload_list = path_payload_list or resource_path("scanners/ssrf/pathpayload.txt")
         self.collaborator = collaborator
         self.bruteforceattack = bruteforceattack
         self.proxy = proxy

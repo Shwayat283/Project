@@ -5,14 +5,24 @@ import csv
 import io
 import threading
 from scanners.ssrf.SSRF import SSRFScanner, display_xml
+import os
+import sys
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class SSRFScannerWindow(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
         self.title("SSRF Scanner")
-        self.state('normal')  # Changed from 'zoomed' to 'normal'
-        self.geometry("{0}x{1}+0+0".format(self.winfo_screenwidth(), self.winfo_screenheight()))  # Maximize window
+        self.state('zoomed')  # Start maximized
         self.configure(bg=self.parent.current_bg)
         self.style = ttk.Style(self)
         self.style.configure('Custom.TEntry', 
@@ -91,9 +101,9 @@ class SSRFScannerWindow(tk.Toplevel):
                 widget.configure(style='Placeholder.TEntry')
 
         # Target URL
-        ttk.Label(input_container, text="🌐 Target URL:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
+        ttk.Label(input_container, text="�� Target URL:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.url_entry = ttk.Entry(input_container, width=70, style='Placeholder.TEntry')
-        self.url_entry.placeholder = "Enter target URL (e.g., http://example.com/api?url=)"
+        self.url_entry.placeholder = "Enter target URL (e.g., http://example.com/api?url=)(required)"
         self.url_entry.insert(0, self.url_entry.placeholder)
         self.url_entry.bind('<FocusIn>', on_focus_in)
         self.url_entry.bind('<FocusOut>', on_focus_out)
@@ -269,6 +279,12 @@ class SSRFScannerWindow(tk.Toplevel):
         if not url and not url_list:
             messagebox.showerror("Input Error", "Target URL or URL-List file is required.")
             return
+
+        # Use resource_path for default payload files
+        if not payload_list:
+            payload_list = resource_path("scanners/ssrf/payload.txt")
+        if not path_payload_list:
+            path_payload_list = resource_path("scanners/ssrf/pathpayload.txt")
 
         self.scan_button.config(state='disabled')
         self.stop_button.config(state='normal')

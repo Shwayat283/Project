@@ -1,30 +1,32 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
 
-block_cipher = None
+datas = [('image.png', '.'), ('scanners', 'scanners')]
+binaries = []
+hiddenimports = ['playwright.sync_api', 'playwright._impl._api_types', 'playwright._impl._browser', 'playwright._impl._browser_context', 'playwright._impl._browser_type', 'playwright._impl._connection', 'playwright._impl._event_context_manager', 'playwright._impl._frame', 'playwright._impl._input', 'playwright._impl._js_handle', 'playwright._impl._page', 'playwright._impl._playwright', 'playwright._impl._transport']
+tmp_ret = collect_all('playwright')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
 
 a = Analysis(
     ['GUI.py'],
     pathex=[],
-    binaries=[],
-    datas=[('image.png', '.')],  # Include image.png in the root directory of the executable
-    hiddenimports=[],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
+    optimize=0,
 )
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
-    a.zipfiles,
     a.datas,
     [],
     name='RocScanner',
@@ -36,8 +38,9 @@ exe = EXE(
     runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
+    argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='Icon.ico'  # Use your icon file if available
-) 
+    icon=['image.png'],
+)
