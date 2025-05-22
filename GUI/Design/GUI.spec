@@ -2,10 +2,17 @@
 
 
 a = Analysis(
+<<<<<<< HEAD
     ['GUI.py'],
     pathex=[],
     binaries=[],
     datas=[('image.png', '.'), ('scanners/', 'scanners/'), ('GUI/', 'GUI/')],
+=======
+    ['D:\\Project2\\Project\\GUI\\Design\\GUI.py'],
+    pathex=[],
+    binaries=[],
+    datas=[('D:\\Project2\\Project\\GUI\\Design\\image.png', '.')],
+>>>>>>> 00a609d01e580a3ec968885c4fbd8c5c077e3d07
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
