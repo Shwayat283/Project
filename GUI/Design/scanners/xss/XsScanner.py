@@ -21,19 +21,17 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class XSScanner:
-    def __init__(self, target_url, proxy_url=None, threads=4, depth=2, report_format=None):
+    def __init__(self, target_url=None, proxy_url=None, threads=4, depth=2, report_format=None, callback=None):
         self.target_url = target_url
         self.proxy_url = proxy_url
         self.max_workers = threads
         self.scan_depth = depth
         self.report_format = report_format
+        self.callback = callback
         self.session = requests.Session()
-        self.vulnerabilities = []
-        self.crawled_urls = set()
-        self.valid_contexts = []
-        self._seen_structures = set()
-        self._field_types = {}
+        self.reset_state()  # Initialize state variables
         self.lock = threading.Lock()
+        self.stop_scan = False
 
         if self.proxy_url and not self.proxy_url.startswith(('http://', 'https://')):
             self.proxy_url = 'http://' + self.proxy_url
@@ -47,6 +45,14 @@ class XSScanner:
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
             'Mozilla/5.0 (Linux; Android 10)'
         ]
+
+    def reset_state(self):
+        """Reset scanner state between scans"""
+        self.vulnerabilities = []
+        self.crawled_urls = set()
+        self.valid_contexts = []
+        self._seen_structures = set()
+        self._field_types = {}
 
     def get_reflected_templates(self):
         return [
@@ -72,13 +78,13 @@ class XSScanner:
             '<svg onload=alert(133333333337)>'
         ]
 
-
-
     def crawl(self, url, depth=0):
-        if depth > self.scan_depth or url in self.crawled_urls:
+        if depth > self.scan_depth or url in self.crawled_urls or self.stop_scan:
             return
         self.crawled_urls.add(url)
         try:
+            if self.callback:
+                self.callback({'type': 'info', 'message': f"Crawling: {url}"})
             headers = {'User-Agent': random.choice(self.user_agents)}
             resp = self.session.get(url, headers=headers, timeout=self.timeout)
             soup = BeautifulSoup(resp.content, 'html.parser')
@@ -87,6 +93,8 @@ class XSScanner:
                 entry = self.validate_form(form, url)
                 if entry:
                     self.log_valid(entry)
+                    if self.callback:
+                        self.callback({'type': 'info', 'message': f"Found form at: {entry['context']}"})
 
             links = [urljoin(url, a['href']) for a in soup.find_all('a', href=True)]
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -98,10 +106,12 @@ class XSScanner:
                 entry = self.validate_url_params(url)
                 if entry:
                     self.log_valid(entry)
-
+                    if self.callback:
+                        self.callback({'type': 'info', 'message': f"Found URL parameters at: {entry['context']}"})
 
         except Exception as e:
-            print(f"[-] Crawl error on {url}: {e}")
+            if self.callback:
+                self.callback({'type': 'error', 'message': f"Crawl error on {url}: {str(e)}"})
 
     def validate_form(self, form, page_url):
         action = urljoin(page_url, form.get('action', page_url))
@@ -160,7 +170,6 @@ class XSScanner:
                 self._seen_structures.add(key)
                 self._field_types[entry['context']] = entry.pop('types')
                 self.valid_contexts.append(entry)
-                print(entry)
 
     def detect_stored(self, response, payload, origin_url):
         try:
@@ -213,12 +222,16 @@ class XSScanner:
         if workers is None:
             workers = self.max_workers
         def worker(entry):
+            if self.stop_scan:
+                return
             types = self._field_types.get(entry['context'], {})
             origin = entry['origin']
             action, method_paren = entry['context'].rsplit(' ', 1)
             method = method_paren.strip('()')
             token = '133333333337'
             for payload in self.get_reflected_templates():
+                if self.stop_scan:
+                    break
                 data = {}
                 for name, orig in entry['fields'].items():
                     field_info = types.get(name, {})
@@ -253,49 +266,32 @@ class XSScanner:
         with ThreadPoolExecutor(max_workers=workers) as executor:
             executor.map(worker, self.valid_contexts)
 
-# ... crawl, validate_form, validate_url_params, log_valid, detect_stored, detect_runtime_playwright unchanged ...
     def report_vulnerability(self, vuln_type, payload, source, param=None):
         timestamp = datetime.now().isoformat()
+        entry = {
+            'type': vuln_type,
+            'parameter': param or '',
+            'payload': payload,
+            'source': source,
+            'timestamp': timestamp
+        }
         with self.lock:
-            entry = {
-                'type': vuln_type,
-                'parameter': param or '',
-                'payload': payload,
-                'source': source,
-                'timestamp': timestamp
-            }
             self.vulnerabilities.append(entry)
-        # Colorful log
-        msg = f"[!] {vuln_type} FOUND at {source}"
-        if param:
-            msg += f" (param: {param})"
-        print(Fore.RED + msg)
-        print(Fore.YELLOW + f"    Payload: {payload}")
-        print(Fore.CYAN + f"    Time: {timestamp}")
+            if self.callback:
+                self.callback(entry)
 
-    def export_json(self, filename):
-        with open(filename, 'w') as f:
-            json.dump(self.vulnerabilities, f, indent=2)
-        print(Fore.GREEN + f"[+] JSON report: {filename}")
-
-    
-
-
-    def export_json(self, filename=''):
+    def export_json(self, filename='report.json'):
         with open(filename, 'w') as f:
             json.dump(self.vulnerabilities, f, indent=2)
 
-        print(Fore.GREEN + f"[+] JSON report: {filename}")
-
-    def export_csv(self, filename):
+    def export_csv(self, filename='report.csv'):
         keys = ['type', 'parameter', 'payload', 'source', 'timestamp']
         with open(filename, 'w', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=keys)
             writer.writeheader()
             writer.writerows(self.vulnerabilities)
-        print(Fore.GREEN + f"[+] CSV report: {filename}")
 
-    def export_xml(self, filename):
+    def export_xml(self, filename='report.xml'):
         root = ET.Element('vulnerabilities')
         for vuln in self.vulnerabilities:
             el = ET.SubElement(root, 'vulnerability')
@@ -303,28 +299,48 @@ class XSScanner:
                 child = ET.SubElement(el, k)
                 child.text = str(v)
         ET.ElementTree(root).write(filename, encoding='utf-8', xml_declaration=True)
-        print(Fore.GREEN + f"[+] XML report: {filename}")
 
     def start_scan(self):
-        print(Fore.GREEN + f"[+] Starting scan on: {self.target_url}")
-        print(Fore.GREEN + f"    Threads: {self.max_workers}")
-        print(Fore.GREEN + f"    Proxy: {self.proxy_url or 'None'}")
-        print(Fore.BLUE + f"[*] Crawling {self.target_url}...")
+        if not self.target_url:
+            raise ValueError("Target URL is required")
+
+        # Reset state before starting new scan
+        self.reset_state()
+
+        if self.callback:
+            self.callback({'type': 'info', 'message': f"Starting scan on: {self.target_url}"})
+            self.callback({'type': 'info', 'message': f"Threads: {self.max_workers}"})
+            self.callback({'type': 'info', 'message': f"Proxy: {self.proxy_url or 'None'}"})
+            self.callback({'type': 'info', 'message': f"Depth: {self.scan_depth}"})
+            self.callback({'type': 'info', 'message': f"Crawling {self.target_url}..."})
+        
         self.crawl(self.target_url)
-        print(Fore.BLUE + f"[+] Contexts collected: {len(self.valid_contexts)}")
-        print(Fore.BLUE + "[*] Running XSS tests...")
+        
+        if self.callback:
+            self.callback({'type': 'info', 'message': f"Contexts collected: {len(self.valid_contexts)}"})
+            self.callback({'type': 'info', 'message': "Running XSS tests..."})
+        
         self.run_payload_tests(self.max_workers)
 
         total = len(self.vulnerabilities)
-        print(Fore.MAGENTA + f"[=] Done. {total} vulnerabilities found.")
+        if self.callback:
+            self.callback({'type': 'info', 'message': f"Scan complete. Found {total} vulnerabilities."})
+        
         if self.report_format:
             ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'xss_report_{ts}'
             if self.report_format in ('json', 'all'):
-                self.export_json(f'report_{ts}.json')
+                self.export_json(f'{filename}.json')
+                if self.callback:
+                    self.callback({'type': 'info', 'message': f"Exported JSON report: {filename}.json"})
             if self.report_format in ('csv', 'all'):
-                self.export_csv(f'report_{ts}.csv')
+                self.export_csv(f'{filename}.csv')
+                if self.callback:
+                    self.callback({'type': 'info', 'message': f"Exported CSV report: {filename}.csv"})
             if self.report_format in ('xml', 'all'):
-                self.export_xml(f'report_{ts}.xml')
+                self.export_xml(f'{filename}.xml')
+                if self.callback:
+                    self.callback({'type': 'info', 'message': f"Exported XML report: {filename}.xml"})
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Advanced XSS Scanner with Reporting')
