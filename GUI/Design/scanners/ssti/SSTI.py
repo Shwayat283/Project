@@ -55,53 +55,42 @@ Server-Side Template Injection Toolkit
 UNIQUE_PREFIX = "TINJ_"  # Template INJection marker prefix
 REQUEST_TIMEOUT = 15     # Timeout for HTTP requests in seconds
 
-class LabHandler:
-    """Detects and handles PortSwigger lab scenarios"""
+class ScenarioHandler:
+    """Detects and handles known SSTI scenarios"""
     
-    LAB_IDENTIFIERS = {
+    SCENARIO_IDENTIFIERS = {
         r"Basic server-side template injection \(code context\)": Scenario2,
         r"Server-side template injection using documentation": Scenario3,
         r"Server-side template injection with information disclosure via user-supplied objects": Scenario5,
         r"Server-side template injection in a sandboxed environment": Scenario6,
-
-        # Add other lab patterns and classes here
-        # "Server-side template injection using documentation": Scenario3,
-        
-        # "Server-side template injection with information disclosure via user-supplied objects": Scenario5,
-        # "Server-side template injection in a sandboxed environment": Scenario6
     }   
 
     def __init__(self, session):
         self.session = session  # Use parent session with proxy config
-        self.detected_lab = None
+        self.detected_scenario = None
 
-    def detect_lab(self, response_text):
-        """Check if response contains known lab identifiers"""
-        for pattern, lab_class in self.LAB_IDENTIFIERS.items():
+    def detect_scenario(self, response_text):
+        """Check if response contains known scenario identifiers"""
+        for pattern, scenario_class in self.SCENARIO_IDENTIFIERS.items():
             if re.search(pattern, response_text, re.IGNORECASE):
-                self.detected_lab = lab_class
+                self.detected_scenario = scenario_class
                 return True
         return False
 
-    def execute_lab_exploit(self, url):
-        """Run the appropriate lab exploit if detected"""
-        if not self.detected_lab:
-            return False
+    def execute_scenario_exploit(self, url):
+        """Run the appropriate scenario exploit if detected"""
+        if not self.detected_scenario:
+            return False, None
 
-        ColorPrinter.info(f"Detected PortSwigger lab: {self.detected_lab.__name__}")
-        lab_instance = self.detected_lab(url, self.session)  # Pass the existing session
-        # Rest of the method remains the same
-        
+        ColorPrinter.info(f"Detected known SSTI scenario: {self.detected_scenario.__name__}")
+        scenario_instance = self.detected_scenario(url, self.session)  # Pass the existing session
         try:
-            if lab_instance.exploit():
-                ColorPrinter.success("Lab exploitation successful!")
-                # Automatically start shell without prompting
-                lab_instance.interactive_shell()
-                return True
+            if scenario_instance.exploit():
+                ColorPrinter.success("Scenario exploitation successful!")
+                return True, scenario_instance
         except Exception as e:
-            ColorPrinter.error(f"Lab exploitation failed: {str(e)}")
-        
-        return False
+            ColorPrinter.error(f"Scenario exploitation failed: {str(e)}")
+        return False, None
 
 class SiteCrawler:
     """Discovers potential parameters by crawling the target website"""
@@ -434,7 +423,12 @@ class SSTIScanner:
         self.stop_scan = False  # Add stop_scan flag
 
         self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TINJ-Scanner/2.0"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TINJ-Scanner/2.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1"
         })
         
         # Configure proxies properly
@@ -458,7 +452,7 @@ class SSTIScanner:
         self.threads = threads
         self.vulnerable_params = []
         self.exploiter = None
-        self.lab_handler = LabHandler(self.session)
+        self.scenario_handler = ScenarioHandler(self.session)  # Pass the same session instance
         self.attack_flow = {
             'phases': [],
             'current_phase': None,
@@ -527,61 +521,51 @@ class SSTIScanner:
             
         results = []
         for target_url in urls:
-            if self.stop_scan:  # Check if scan should be stopped
+            if self.stop_scan:
                 break
-
             self.attack_flow['phases'].append(f'Scanning {target_url}')
             self.attack_flow['current_phase'] = f'Scanning {target_url}'
-            
-            # Crawl for parameters
             crawler = SiteCrawler(self.session, self.crawl_depth)
             parameters = crawler.crawl(target_url)
-            
-            if self.stop_scan:  # Check if scan should be stopped
+            if self.stop_scan:
                 break
-
             self.attack_flow['steps'].append({
                 'phase': f'Scanning {target_url}',
                 'type': 'Crawling',
                 'details': f'Found {len(parameters)} parameters'
             })
-            
-            # Test parameters
             reflected_params = self.find_reflected_parameters(target_url, parameters)
-            
-            if self.stop_scan:  # Check if scan should be stopped
+            if self.stop_scan:
                 break
-
             self.attack_flow['steps'].append({
                 'phase': f'Scanning {target_url}',
                 'type': 'Reflection Testing',
                 'details': f'Found {len(reflected_params)} reflected parameters'
             })
-            
-            # Test for vulnerabilities
             for param in reflected_params:
-                if self.stop_scan:  # Check if scan should be stopped
+                if self.stop_scan:
                     break
-
                 result = self.test_parameter(target_url, param)
                 if result:
+                    ColorPrinter.success(f"[SSTI] Vulnerability found!")
+                    ColorPrinter.info(f"  Parameter: {param}")
+                    ColorPrinter.info(f"  Engine: {result['engine']}")
+                    ColorPrinter.info(f"  Detection method: {result['method']}")
+                    ColorPrinter.info(f"  Payload sent: {result.get('payload', 'N/A')}")
+                    ColorPrinter.info(f"  Evidence: {result['evidence']}")
                     results.append(result)
                     self.vulnerable_params.append(result)
-                    
                     self.attack_flow['steps'].append({
                         'phase': f'Scanning {target_url}',
                         'type': 'Vulnerability Found',
-                        'details': f'Parameter: {param}, Engine: {result["engine"]}'
+                        'details': f'Parameter: {param}, Engine: {result['engine']}'
                     })
-                    
-                    # Create exploiter for interactive shell
                     self.exploiter = SSTIExploiter(
                         self.session,
                         target_url,
                         param,
                         result['engine']
                     )
-                    
         return results
 
     def find_reflected_parameters(self, target_url, parameters):
@@ -988,8 +972,8 @@ Usage Examples:
             initial_response = scanner.session.get(url, verify=False)
             result = None
             
-            if scanner.lab_handler.detect_lab(initial_response.text):
-                if not scanner.lab_handler.execute_lab_exploit(url):
+            if scanner.scenario_handler.detect_scenario(initial_response.text):
+                if not scanner.scenario_handler.execute_scenario_exploit(url):
                     parameters = [p.strip() for p in args.params.split(',')]
                     result = scanner.scan(url, parameters)
             else:
@@ -1069,9 +1053,9 @@ Usage Examples:
     
     try:
         initial_response = scanner.session.get(args.url, verify=False)
-        if scanner.lab_handler.detect_lab(initial_response.text):
-            if not scanner.lab_handler.execute_lab_exploit(args.url):
-                # If lab exploit fails, proceed with normal scan
+        if scanner.scenario_handler.detect_scenario(initial_response.text):
+            if not scanner.scenario_handler.execute_scenario_exploit(args.url):
+                # If scenario exploit fails, proceed with normal scan
                 parameters = [p.strip() for p in args.params.split(',')]
                 result = scanner.scan(args.url, parameters)
         else:

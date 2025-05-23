@@ -14,7 +14,8 @@ class SSTIScannerWindow(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         self.title("SSTI Scanner")
-        self.state('zoomed')  # Start maximized
+        self.state('normal')  # Changed from 'zoomed' to 'normal'
+        self.geometry("{0}x{1}+0+0".format(self.winfo_screenwidth(), self.winfo_screenheight()))  # Maximize window
         self.configure(bg=self.parent.current_bg)
         self.style = ttk.Style(self)
         self.style.configure('Custom.TEntry', 
@@ -197,40 +198,124 @@ class SSTIScannerWindow(tk.Toplevel):
         shell_frame = ttk.Frame(notebook)
         notebook.add(shell_frame, text="Interactive Shell")
         
-        # Create shell interface
+        # Create shell interface with better styling
         shell_container = ttk.Frame(shell_frame)
         shell_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Output area
+        # Add a header frame with gradient-like effect
+        header_frame = ttk.Frame(shell_container, style='Header.TFrame')
+        header_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Configure header style
+        self.style.configure('Header.TFrame', background='#1E1E2E')
+        
+        # Add a header label with icon
+        header_label = ttk.Label(header_frame,
+                               text="📝 Interactive SSTI Shell",
+                               font=("Segoe UI", 16, "bold"),
+                               foreground="#89B4FA",
+                               background='#1E1E2E')
+        header_label.pack(side=tk.LEFT, padx=10, pady=5)
+        
+        # Add a subtitle with status
+        subtitle_label = ttk.Label(header_frame,
+                                 text="Ready to execute commands",
+                                 font=("Segoe UI", 10),
+                                 foreground="#94a3b8",
+                                 background='#1E1E2E')
+        subtitle_label.pack(side=tk.LEFT, padx=10, pady=5)
+        
+        # Create a frame for the output area with a border and gradient-like effect
+        output_frame = ttk.LabelFrame(shell_container, text="Output", padding=5, style='Output.TLabelframe')
+        output_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        # Configure output frame style
+        self.style.configure('Output.TLabelframe', background='#1E1E2E', foreground='#89B4FA')
+        self.style.configure('Output.TLabelframe.Label', background='#1E1E2E', foreground='#89B4FA')
+        
+        # Output area with better styling
         self.shell_output = scrolledtext.ScrolledText(
-            shell_container,
+            output_frame,
             wrap=tk.WORD,
             bg='#2D2D44',
             fg='#E0E0E0',
-            font=('Consolas', 10),
-            height=20
+            font=('Consolas', 11),
+            height=20,
+            padx=10,
+            pady=10,
+            insertbackground='#89B4FA'  # Cursor color
         )
-        self.shell_output.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.shell_output.pack(fill=tk.BOTH, expand=True)
         
-        # Input area
-        input_frame = ttk.Frame(shell_container)
+        # Add a decorative separator
+        separator_frame = ttk.Frame(shell_container, height=2, style='Separator.TFrame')
+        separator_frame.pack(fill=tk.X, pady=10)
+        self.style.configure('Separator.TFrame', background='#89B4FA')
+        
+        # Input area with better styling
+        input_frame = ttk.Frame(shell_container, style='Input.TFrame')
         input_frame.pack(fill=tk.X)
+        self.style.configure('Input.TFrame', background='#1E1E2E')
+        
+        # Add a prompt label with custom styling
+        prompt_label = ttk.Label(input_frame,
+                               text=">",
+                               font=("Consolas", 12, "bold"),
+                               foreground="#89B4FA",
+                               background='#1E1E2E')
+        prompt_label.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Style for the input field
+        self.style.configure('Shell.TEntry',
+                           fieldbackground='#2D2D44',
+                           foreground='#E0E0E0',
+                           insertcolor='#89B4FA',
+                           bordercolor='#3D3D54',
+                           lightcolor='#3D3D54',
+                           darkcolor='#3D3D54',
+                           font=('Consolas', 11))
         
         self.shell_input = ttk.Entry(
             input_frame,
-            font=('Consolas', 10),
-            style='Custom.TEntry'
+            font=('Consolas', 11),
+            style='Shell.TEntry'
         )
         self.shell_input.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         self.shell_input.bind('<Return>', self._execute_shell_command)
+        self.shell_input.bind('<Up>', self._history_up)
+        self.shell_input.bind('<Down>', self._history_down)
+        
+        # Style for the send button
+        self.style.configure('Shell.TButton',
+                           background='#89B4FA',
+                           foreground='#1E1E2E',
+                           font=('Segoe UI', 11, 'bold'))
+        self.style.map('Shell.TButton',
+                      background=[('active', '#A5C8FF'), ('pressed', '#7BA4F7')])
         
         send_button = ttk.Button(
             input_frame,
             text="Send",
-            style='Accent.TButton',
+            style='Shell.TButton',
             command=lambda: self._execute_shell_command(None)
         )
         send_button.pack(side=tk.RIGHT)
+        
+        # Add status bar with gradient-like effect
+        status_frame = ttk.Frame(shell_container, style='Status.TFrame')
+        status_frame.pack(fill=tk.X, pady=(5, 0))
+        self.style.configure('Status.TFrame', background='#1E1E2E')
+        
+        self.status_bar = ttk.Label(status_frame,
+                                  text="Ready",
+                                  font=("Segoe UI", 10),
+                                  foreground="#94a3b8",
+                                  background='#1E1E2E')
+        self.status_bar.pack(side=tk.LEFT, padx=5, pady=2)
+        
+        # Initialize command history
+        self.command_history = []
+        self.history_index = 0
 
     def _browse_urllist(self):
         path = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
@@ -383,9 +468,51 @@ class SSTIScannerWindow(tk.Toplevel):
             self._append_text("No vulnerabilities found.\n")
             return
             
-        self._append_text(f"Scan complete. Found {len(results)} issues.\n")
+        self._append_text(f"Scan complete. Found {len(results)} issues.\n\n")
         
         try:
+            # Display detailed information for each finding
+            for idx, item in enumerate(results, 1):
+                self._append_text(f"=== Finding #{idx} ===\n")
+                self._append_text(f"Target URL: {item.get('url', 'N/A')}\n")
+                self._append_text(f"Vulnerable Parameter: {item.get('parameter', 'N/A')}\n")
+                self._append_text(f"Template Engine: {item.get('engine', 'N/A')}\n")
+                self._append_text(f"Detection Method: {item.get('method', 'N/A')}\n")
+                self._append_text(f"Evidence: {item.get('evidence', 'N/A')}\n")
+                
+                # Add payload information if available
+                if 'payload' in item:
+                    self._append_text("\nPayload Information:\n")
+                    self._append_text(f"Payload Type: {item.get('payload_type', 'N/A')}\n")
+                    self._append_text(f"Payload Used: {item.get('payload', 'N/A')}\n")
+                
+                # Add template engine details
+                engine = item.get('engine', '').lower()
+                if engine:
+                    self._append_text("\nTemplate Engine Details:\n")
+                    if engine == 'jinja2':
+                        self._append_text("• Jinja2 is a modern and designer-friendly templating language for Python\n")
+                        self._append_text("• Common payload pattern: {{7*'7'}} or {{self.__init__.__globals__.__builtins__}}\n")
+                    elif engine == 'twig':
+                        self._append_text("• Twig is a modern template engine for PHP\n")
+                        self._append_text("• Common payload pattern: {{_self.env.registerUndefinedFilterCallback('exec')}}\n")
+                    elif engine == 'freemarker':
+                        self._append_text("• FreeMarker is a template engine for Java\n")
+                        self._append_text("• Common payload pattern: ${7*7} or <#assign ex=\"freemarker.template.utility.Execute\">\n")
+                    elif engine == 'velocity':
+                        self._append_text("• Velocity is a Java-based template engine\n")
+                        self._append_text("• Common payload pattern: #set($str=$class.inspect(\"java.lang.String\"))\n")
+                    elif engine == 'handlebars':
+                        self._append_text("• Handlebars is a JavaScript templating engine\n")
+                        self._append_text("• Common payload pattern: {{#with \"s\" as |string|}} or {{this.constructor.constructor}}\n")
+                    elif engine == 'erb':
+                        self._append_text("• ERB is Ruby's templating engine\n")
+                        self._append_text("• Common payload pattern: <%= 7*7 %> or <%= system('command') %>\n")
+                
+                self._append_text("\n" + "="*50 + "\n\n")
+            
+            # Display the formatted output as requested
+            self._append_text("\nFormatted Output:\n")
             if output_format == 'json':
                 for item in results:
                     self._append_text(json.dumps(item, indent=2) + "\n")
@@ -430,32 +557,76 @@ class SSTIScannerWindow(tk.Toplevel):
             
         if command.lower() == 'exit':
             self.shell_output.config(state='normal')
-            self.shell_output.insert(tk.END, "Exiting shell...\n")
+            self.shell_output.insert(tk.END, "Exiting shell...\n", "exit")
             self.shell_output.config(state='disabled')
             self.shell_input.delete(0, tk.END)
             return
+            
+        # Add clear command
+        if command.lower() == 'clear':
+            self.shell_output.config(state='normal')
+            self.shell_output.delete('1.0', tk.END)
+            self.shell_output.config(state='disabled')
+            self.shell_input.delete(0, tk.END)
+            return
+            
+        # Add command to history
+        self.command_history.append(command)
+        self.history_index = len(self.command_history)
             
         # Send command to exploiter
         if hasattr(self, 'exploiter') and self.exploiter:
             try:
                 self.shell_output.config(state='normal')
-                self.shell_output.insert(tk.END, f"> {command}\n")
+                self.shell_output.insert(tk.END, f"> {command}\n", "command")
+                
+                # Update status
+                self.status_bar.config(text="Executing command...", foreground="#89B4FA")
+                self.update_idletasks()
                 
                 response = self.exploiter.execute_command(command)
                 if response:
-                    self.shell_output.insert(tk.END, f"{response}\n")
+                    self.shell_output.insert(tk.END, f"{response}\n", "response")
                 else:
-                    self.shell_output.insert(tk.END, "No response received from server\n")
+                    self.shell_output.insert(tk.END, "No response received from server\n", "error")
                     
                 self.shell_output.config(state='disabled')
+                self.status_bar.config(text="Command executed successfully", foreground="#4ADE80")  # Green color for success
             except Exception as e:
                 self.shell_output.config(state='normal')
-                self.shell_output.insert(tk.END, f"Error: {str(e)}\n")
+                self.shell_output.insert(tk.END, f"Error: {str(e)}\n", "error")
                 self.shell_output.config(state='disabled')
+                self.status_bar.config(text="Error executing command", foreground="#F87171")  # Red color for error
         else:
             self.shell_output.config(state='normal')
-            self.shell_output.insert(tk.END, "Shell not available. Please run a scan first.\n")
+            self.shell_output.insert(tk.END, "Shell not available. Please run a scan first.\n", "error")
             self.shell_output.config(state='disabled')
+            self.status_bar.config(text="Shell not available", foreground="#F87171")
             
         self.shell_input.delete(0, tk.END)
-        self.shell_output.see(tk.END) 
+        self.shell_output.see(tk.END)
+        
+        # Configure tags for syntax highlighting with more colors
+        self.shell_output.tag_configure("command", foreground="#89B4FA")  # Blue
+        self.shell_output.tag_configure("response", foreground="#E0E0E0")  # White
+        self.shell_output.tag_configure("error", foreground="#F87171")  # Red
+        self.shell_output.tag_configure("exit", foreground="#94a3b8")  # Gray
+        self.shell_output.tag_configure("success", foreground="#4ADE80")  # Green
+        self.shell_output.tag_configure("warning", foreground="#FBBF24")  # Yellow
+
+    def _history_up(self, event):
+        """Navigate up through command history"""
+        if self.command_history and self.history_index > 0:
+            self.history_index -= 1
+            self.shell_input.delete(0, tk.END)
+            self.shell_input.insert(0, self.command_history[self.history_index])
+
+    def _history_down(self, event):
+        """Navigate down through command history"""
+        if self.command_history and self.history_index < len(self.command_history) - 1:
+            self.history_index += 1
+            self.shell_input.delete(0, tk.END)
+            self.shell_input.insert(0, self.command_history[self.history_index])
+        elif self.history_index == len(self.command_history) - 1:
+            self.history_index += 1
+            self.shell_input.delete(0, tk.END) 

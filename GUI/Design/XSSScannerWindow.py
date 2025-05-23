@@ -12,7 +12,8 @@ class XSSScannerWindow(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         self.title("XSS Scanner")
-        self.state('zoomed')  # Start maximized
+        self.state('normal')  # Changed from 'zoomed' to 'normal'
+        self.geometry("{0}x{1}+0+0".format(self.winfo_screenwidth(), self.winfo_screenheight()))  # Maximize window
         self.configure(bg=self.parent.current_bg)
         self.style = ttk.Style(self)
         self.style.configure('Custom.TEntry', 
@@ -313,7 +314,15 @@ class XSSScannerWindow(tk.Toplevel):
                     if hasattr(self, 'scanner') and self.scanner.stop_scan:
                         break
                     self._append_text(f"\nScanning {url}...\n")
-                    self.scanner.target_url = url
+                    # Create a new scanner instance for each URL
+                    self.scanner = XSScanner(
+                        target_url=url,
+                        proxy_url=self.proxy_entry.get().strip() if self.proxy_entry.get().strip() != self.proxy_entry.placeholder else None,
+                        threads=int(self.workers_entry.get()),
+                        depth=int(self.depth_entry.get()),
+                        report_format=self.report_var.get(),
+                        callback=self._on_scan_result
+                    )
                     self.scanner.start_scan()
             else:
                 self.scanner.start_scan()

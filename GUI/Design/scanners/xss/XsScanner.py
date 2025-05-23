@@ -54,7 +54,11 @@ class XSScanner:
         self.report_format = report_format
         self.callback = callback
         self.session = requests.Session()
-        self.reset_state()  # Initialize state variables
+        self.vulnerabilities = []
+        self.crawled_urls = set()
+        self.valid_contexts = []
+        self._seen_structures = set()
+        self._field_types = {}
         self.lock = threading.Lock()
         self.stop_scan = False
 
@@ -70,14 +74,6 @@ class XSScanner:
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
             'Mozilla/5.0 (Linux; Android 10)'
         ]
-
-    def reset_state(self):
-        """Reset scanner state between scans"""
-        self.vulnerabilities = []
-        self.crawled_urls = set()
-        self.valid_contexts = []
-        self._seen_structures = set()
-        self._field_types = {}
 
     def get_reflected_templates(self):
         return [
@@ -217,51 +213,36 @@ class XSScanner:
         """
         Uses Playwright to detect alert dialogs containing the token.
         """
-        try:
-            with sync_playwright() as p:
-                browser_path = get_playwright_path()
-                launch_args = {
-                    'headless': True,
-                }
-                if browser_path:
-                    launch_args['executable_path'] = os.path.join(browser_path, 'chromium', 'chrome.exe')
-                
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            found = False
+
+            def handle_dialog(dialog):
+                nonlocal found
                 try:
-                    browser = p.chromium.launch(**launch_args)
-                    page = browser.new_page()
-                    found = False
-
-                    def handle_dialog(dialog):
-                        nonlocal found
-                        try:
-                            if str(token) in dialog.message:
-                                found = True
-                            dialog.dismiss()
-                        except Exception:
-                            pass
-
-                    page.on('dialog', handle_dialog)
-                    try:
-                        # Navigate and wait until load
-                        page.goto(url, timeout=timeout)
-                        # Give time for any dialogs to fire
-                        page.wait_for_timeout(1000)
-                    except Exception:
-                        pass
-                    finally:
-                        browser.close()
-                    return found
+                    if str(token) in dialog.message:
+                        found = True
+                    dialog.dismiss()
                 except Exception:
-                    return False
-        except Exception:
-            return False
+                    pass
+
+            page.on('dialog', handle_dialog)
+            try:
+                # Navigate and wait until load
+                page.goto(url, timeout=timeout)
+                # Give time for any dialogs to fire
+                page.wait_for_timeout(1000)
+            except Exception:
+                pass
+            finally:
+                browser.close()
+            return found
 
     def run_payload_tests(self, workers=None):
         if workers is None:
             workers = self.max_workers
         def worker(entry):
-            if self.stop_scan:
-                return
             types = self._field_types.get(entry['context'], {})
             origin = entry['origin']
             action, method_paren = entry['context'].rsplit(' ', 1)
@@ -269,7 +250,7 @@ class XSScanner:
             token = '133333333337'
             for payload in self.get_reflected_templates():
                 if self.stop_scan:
-                    break
+                    return
                 data = {}
                 for name, orig in entry['fields'].items():
                     field_info = types.get(name, {})
@@ -300,9 +281,22 @@ class XSScanner:
                         self.report_vulnerability('Reflected (playwright)', payload, url, param)
                     self.detect_stored(resp, payload, origin)
                 except Exception as e:
-                    print(f"[-] Test error on {action}: {e}")
+                    if self.callback:
+                        self.callback({'type': 'error', 'message': f"Error testing payload at {url}: {str(e)}"})
+
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            executor.map(worker, self.valid_contexts)
+            futures = []
+            for entry in self.valid_contexts:
+                if self.stop_scan:
+                    break
+                futures.append(executor.submit(worker, entry))
+            
+            for future in futures:
+                try:
+                    future.result()
+                except Exception as e:
+                    if self.callback:
+                        self.callback({'type': 'error', 'message': f"Error in payload test worker: {str(e)}"})
 
     def report_vulnerability(self, vuln_type, payload, source, param=None):
         timestamp = datetime.now().isoformat()
@@ -337,6 +331,15 @@ class XSScanner:
                 child = ET.SubElement(el, k)
                 child.text = str(v)
         ET.ElementTree(root).write(filename, encoding='utf-8', xml_declaration=True)
+
+    def reset_state(self):
+        """Reset scanner state between scans"""
+        self.vulnerabilities = []
+        self.crawled_urls = set()
+        self.valid_contexts = []
+        self._seen_structures = set()
+        self._field_types = {}
+        self.stop_scan = False
 
     def start_scan(self):
         if not self.target_url:
