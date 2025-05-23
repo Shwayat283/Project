@@ -15,10 +15,35 @@ from datetime import datetime
 import xml.etree.ElementTree as ET
 from playwright.sync_api import sync_playwright
 from colorama import init, Fore, Style
+import os
+import sys
 
 init(autoreset=True)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+def get_playwright_path():
+    """Get the correct path for Playwright browser binaries"""
+    try:
+        if getattr(sys, 'frozen', False):
+            # If the application is run as a bundle
+            base_path = sys._MEIPASS
+        else:
+            # If the application is run from a Python interpreter
+            base_path = os.path.abspath(os.path.dirname(__file__))
+        
+        # Check common paths for the browser
+        possible_paths = [
+            os.path.join(base_path, 'playwright', 'driver', 'package', '.local-browsers'),
+            os.path.join(os.path.expanduser('~'), '.cache', 'ms-playwright'),
+            os.path.join(base_path, '.local-browsers')
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        return None
+    except Exception:
+        return None
 
 class XSScanner:
     def __init__(self, target_url=None, proxy_url=None, threads=4, depth=2, report_format=None, callback=None):
@@ -192,31 +217,44 @@ class XSScanner:
         """
         Uses Playwright to detect alert dialogs containing the token.
         """
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            found = False
-
-            def handle_dialog(dialog):
-                nonlocal found
+        try:
+            with sync_playwright() as p:
+                browser_path = get_playwright_path()
+                launch_args = {
+                    'headless': True,
+                }
+                if browser_path:
+                    launch_args['executable_path'] = os.path.join(browser_path, 'chromium', 'chrome.exe')
+                
                 try:
-                    if str(token) in dialog.message:
-                        found = True
-                    dialog.dismiss()
-                except Exception:
-                    pass
+                    browser = p.chromium.launch(**launch_args)
+                    page = browser.new_page()
+                    found = False
 
-            page.on('dialog', handle_dialog)
-            try:
-                # Navigate and wait until load
-                page.goto(url, timeout=timeout)
-                # Give time for any dialogs to fire
-                page.wait_for_timeout(1000)
-            except Exception:
-                pass
-            finally:
-                browser.close()
-            return found
+                    def handle_dialog(dialog):
+                        nonlocal found
+                        try:
+                            if str(token) in dialog.message:
+                                found = True
+                            dialog.dismiss()
+                        except Exception:
+                            pass
+
+                    page.on('dialog', handle_dialog)
+                    try:
+                        # Navigate and wait until load
+                        page.goto(url, timeout=timeout)
+                        # Give time for any dialogs to fire
+                        page.wait_for_timeout(1000)
+                    except Exception:
+                        pass
+                    finally:
+                        browser.close()
+                    return found
+                except Exception:
+                    return False
+        except Exception:
+            return False
 
     def run_payload_tests(self, workers=None):
         if workers is None:
