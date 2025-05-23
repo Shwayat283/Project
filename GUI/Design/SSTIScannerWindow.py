@@ -313,7 +313,24 @@ class SSTIScannerWindow(tk.Toplevel):
             self.is_scanning = True
             self.target_url = url  # Store the target URL
             
-            # Run the scan
+            # First check if this is a scenario
+            initial_response = self.scanner.session.get(url, verify=False)
+            if self.scanner.scenario_handler.detect_scenario(initial_response.text):
+                self._append_text("Detected known SSTI scenario. Attempting scenario-specific exploitation...\n")
+                success, exploiter = self.scanner.scenario_handler.execute_scenario_exploit(url)
+                if success:
+                    self._append_text("Scenario exploitation successful!\n")
+                    self.shell_output.config(state='normal')
+                    self.shell_output.insert(tk.END, "Scenario exploitation successful! Interactive shell is now available.\n")
+                    self.shell_output.insert(tk.END, "Type 'exit' to quit the shell.\n")
+                    self.shell_output.config(state='disabled')
+                    self.shell_input.config(state='normal')
+                    self.exploiter = exploiter
+                    return
+                else:
+                    self._append_text("Scenario exploitation failed, falling back to standard scan...\n")
+            
+            # Run the standard scan
             results = self.scanner.scan(
                 url=url,
                 url_list=url_list,
@@ -331,8 +348,10 @@ class SSTIScannerWindow(tk.Toplevel):
             
             # Check if we found any vulnerabilities
             if results and len(results) > 0:
+                self.shell_output.config(state='normal')
                 self.shell_output.insert(tk.END, "Vulnerability found! Interactive shell is now available.\n")
                 self.shell_output.insert(tk.END, "Type 'exit' to quit the shell.\n")
+                self.shell_output.config(state='disabled')
                 self.shell_input.config(state='normal')
                 
                 # Create exploiter for the first vulnerable parameter
@@ -343,19 +362,17 @@ class SSTIScannerWindow(tk.Toplevel):
                     vuln['parameter'],
                     vuln['engine']
                 )
-                
-                # Enable shell input
-                self.shell_input.config(state='normal')
-                self.shell_output.config(state='normal')
-                self.shell_output.insert(tk.END, "Shell ready. You can start typing commands.\n")
-                self.shell_output.config(state='disabled')
             else:
+                self.shell_output.config(state='normal')
                 self.shell_output.insert(tk.END, "No vulnerabilities found. Interactive shell is not available.\n")
+                self.shell_output.config(state='disabled')
                 self.shell_input.config(state='disabled')
                 
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {str(e)}")
+            self.shell_output.config(state='normal')
             self.shell_output.insert(tk.END, f"Error: {str(e)}\n")
+            self.shell_output.config(state='disabled')
         finally:
             self.is_scanning = False
             self.scan_button.config(state='normal')

@@ -221,7 +221,8 @@ class ScannerApp(tk.Tk):
             win = SSTIScannerWindow(self)
         else:
             win = GenericWindow(self, vuln_type)
-        win.state('zoomed')  # Make the new window maximized
+        win.state('normal')  # Changed from 'zoomed' to 'normal'
+        win.geometry("{0}x{1}+0+0".format(win.winfo_screenwidth(), win.winfo_screenheight()))  # Maximize window
         win.protocol("WM_DELETE_WINDOW", lambda: self._on_child_close(win))
         win.mainloop()
 
