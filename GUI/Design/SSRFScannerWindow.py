@@ -22,8 +22,7 @@ class SSRFScannerWindow(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         self.title("SSRF Scanner")
-        self.state('normal')  # Changed from 'zoomed' to 'normal'
-        self.geometry("{0}x{1}+0+0".format(self.winfo_screenwidth(), self.winfo_screenheight()))  # Maximize window
+        self.state('zoomed')
         self.configure(bg=self.parent.current_bg)
         self.style = ttk.Style(self)
         self.style.configure('Custom.TEntry', 
@@ -102,7 +101,7 @@ class SSRFScannerWindow(tk.Toplevel):
                 widget.configure(style='Placeholder.TEntry')
 
         # Target URL
-        ttk.Label(input_container, text="�� Target URL:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
+        ttk.Label(input_container, text="🌐 Target URL:", font=("Segoe UI", 12)).grid(row=row, column=0, sticky=tk.W, pady=8)
         self.url_entry = ttk.Entry(input_container, width=70, style='Placeholder.TEntry')
         self.url_entry.placeholder = "Enter target URL (e.g., http://example.com/api?url=)(required)"
         self.url_entry.insert(0, self.url_entry.placeholder)

@@ -11,8 +11,7 @@ class LFIScannerWindow(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         self.title("LFI Scanner")
-        self.state('normal')  # Changed from 'zoomed' to 'normal'
-        self.geometry("{0}x{1}+0+0".format(self.winfo_screenwidth(), self.winfo_screenheight()))  # Maximize window
+        self.state('zoomed')
         self.configure(bg=self.parent.current_bg)
         self.style = ttk.Style(self)
         self.style.configure('Custom.TEntry', 

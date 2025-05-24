@@ -28,7 +28,7 @@ class ScannerApp(tk.Tk):
     def __init__(self): 
         super().__init__()
         self.title("RocScanner")
-        self.state('normal')  # Changed from 'zoomed' to 'normal'
+        self.state('zoomed')
         self.geometry("{0}x{1}+0+0".format(self.winfo_screenwidth(), self.winfo_screenheight()))  # Maximize window
         self.current_bg = "#1E1E2E"  # Dark theme background
         self.configure(bg=self.current_bg)
@@ -213,8 +213,7 @@ class ScannerApp(tk.Tk):
             win = SSTIScannerWindow(self)
         else:
             win = GenericWindow(self, vuln_type)
-        win.state('normal')  # Changed from 'zoomed' to 'normal'
-        win.geometry("{0}x{1}+0+0".format(win.winfo_screenwidth(), win.winfo_screenheight()))  # Maximize window
+        win.state('zoomed')
         win.protocol("WM_DELETE_WINDOW", lambda: self._on_child_close(win))
         win.mainloop()
 

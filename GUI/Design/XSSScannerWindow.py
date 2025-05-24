@@ -12,8 +12,7 @@ class XSSScannerWindow(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         self.title("XSS Scanner")
-        self.state('normal')  # Changed from 'zoomed' to 'normal'
-        self.geometry("{0}x{1}+0+0".format(self.winfo_screenwidth(), self.winfo_screenheight()))  # Maximize window
+        self.state('zoomed')
         self.configure(bg=self.parent.current_bg)
         self.style = ttk.Style(self)
         self.style.configure('Custom.TEntry', 
@@ -106,12 +105,12 @@ class XSSScannerWindow(tk.Toplevel):
         url_list_frame = ttk.Frame(input_container)
         url_list_frame.grid(row=row, column=1, sticky=tk.EW, padx=5)
         self.url_list_entry = ttk.Entry(url_list_frame, style='Placeholder.TEntry')
-        self.url_list_entry.placeholder = "Enter path to URL list file (optional)"
+        self.url_list_entry.placeholder = "Enter path to URL list file "
         self.url_list_entry.insert(0, self.url_list_entry.placeholder)
         self.url_list_entry.bind('<FocusIn>', on_focus_in)
         self.url_list_entry.bind('<FocusOut>', on_focus_out)
         self.url_list_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(url_list_frame, text="Browse", command=self._browse_urllist).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(url_list_frame, text="Browse", style='Accent.TButton', command=self._browse_urllist).pack(side=tk.RIGHT, padx=5)
 
         row += 1
         # Proxy
