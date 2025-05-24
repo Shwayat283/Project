@@ -6,6 +6,7 @@ import io
 import threading
 from scanners.xss.XsScanner import XSScanner
 import xml.etree.ElementTree as ET
+import os
 
 class XSSScannerWindow(tk.Toplevel):
     def __init__(self, parent):
@@ -231,15 +232,17 @@ class XSSScannerWindow(tk.Toplevel):
         url = self.url_entry.get().strip()
         url_list = self.url_list_entry.get().strip()
         
-        if not url and (not url_list or url_list == self.url_list_entry.placeholder):
-            messagebox.showerror("Input Error", "Either Target URL or URL List is required.")
-            return
-
+        # Check if URL is placeholder
         if url == self.url_entry.placeholder:
             url = None
-
-        if url_list == self.url_list_entry.placeholder:
+            
+        # Check if URL list is empty or placeholder
+        if not url_list or url_list == self.url_list_entry.placeholder:
             url_list = None
+            
+        if not url and not url_list:
+            messagebox.showerror("Input Error", "Either Target URL or URL List is required.")
+            return
 
         # Get proxy if not placeholder
         proxy = self.proxy_entry.get().strip()
@@ -306,7 +309,7 @@ class XSSScannerWindow(tk.Toplevel):
 
     def _run_scan(self, url_list=None):
         try:
-            if url_list:
+            if url_list and url_list != self.url_list_entry.placeholder and os.path.isfile(url_list):
                 with open(url_list) as f:
                     urls = f.read().splitlines()
                 for url in urls:
